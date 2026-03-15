@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""
+fetch_jsessionid.py
+--------------------
+Logs into the Clareity IAM portal and retrieves the JSESSIONID cookie
+so you can use it in subsequent API calls (e.g. the ConnectMLS search API).
+
+Usage:
+    export MLS_USERNAME='your_username'
+    export MLS_PASSWORD='your_password'
+    python fetch_jsessionid.py
+
+Dependencies:
+    pip install requests
+"""
+
+import os
+import re
+import sys
+import json
+import requests
+from urllib.parse import urljoin
+
+LOGIN_URL = "https://maxebrdi.clareityiam.net/idp/login"
+
+USERNAME = os.environ.get("MLS_USERNAME", "your_username_here")
+PASSWORD = os.environ.get("MLS_PASSWORD", "your_password_here")
+
+
+def get_session_cookies(username: str, password: str) -> requests.cookies.RequestsCookieJar:
+    """
+    Performs the login flow and returns the full session CookieJar.
+    Returns the requests.cookies.RequestsCookieJar directly — do NOT
+    cast to dict() as that triggers a requests bug with None-domain cookies.
+    """
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/121.0.0.0 Safari/537.36"
+        ),
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+            "image/avif,image/webp,*/*;q=0.8"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    })
+
+    # ── Step 1: GET login page ────────────────────────────────────────────────
+    print(f"[1/3] Fetching login page: {LOGIN_URL}")
+    resp = session.get(LOGIN_URL, allow_redirects=True, timeout=30)
+    resp.raise_for_status()
+
+    hidden = _extract_hidden_fields(resp.text)
+    print(f"   Hidden fields found: {list(hidden.keys())}")
+
+    # Clareity/RMLS portals use Java EE field names (j_username / j_password).
+    # We try both naming conventions so the script works regardless.
+    if "j_username" in resp.text or "j_password" in resp.text:
+        cred_fields = {"j_username": username, "j_password": password}
+    else:
+        cred_fields = {"username": username, "password": password}
+
+    form_data = {**hidden, **cred_fields}
+    print(f"   Submitting fields  : {list(form_data.keys())}")
+
+    # ── Step 2: POST credentials ───────────────────────────────────────────────
+    post_url = _extract_form_action(resp.text, base_url=resp.url)
+    print(f"[2/3] Posting credentials to: {post_url}")
+
+    session.headers.update({
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": resp.url,
+        "Origin": "https://maxebrdi.clareityiam.net",
+    })
+
+    resp2 = session.post(post_url, data=form_data, allow_redirects=True, timeout=30)
+    resp2.raise_for_status()
+
+    print(f"   Final URL after redirects: {resp2.url}")
+    print(f"   HTTP status              : {resp2.status_code}")
+
+    # ── Step 3: Safely read cookies ───────────────────────────────────────────
+    # IMPORTANT: never use dict(session.cookies) — it crashes on cookies that
+    # have domain=None or path=None (a known requests library bug).
+    # Iterate the jar directly instead.
+    print("[3/3] Cookies received:")
+    found = {}
+    for cookie in session.cookies:
+        print(f"   {cookie.name} = {cookie.value}  "
+              f"(domain={cookie.domain}, path={cookie.path})")
+        found[cookie.name] = cookie.value
+
+    if "JSESSIONID" not in found:
+        print("\n⚠  JSESSIONID not found. Possible reasons:")
+        print("   • Wrong username / password")
+        print("   • The portal requires MFA")
+        print("   • The session lives on a different domain (see final URL above)")
+        print("   • The form field names differ — check the page source manually")
+        raise RuntimeError("Login did not yield a JSESSIONID cookie.")
+
+    # Return the live CookieJar so requests can attach it correctly to follow-up calls
+    return session.cookies
+
+
+def cookies_to_header(jar: requests.cookies.RequestsCookieJar) -> str:
+    """Convert a CookieJar to a Cookie header string (safe alternative to dict())."""
+    return "; ".join(f"{c.name}={c.value}" for c in jar)
+
+
+def get_cookie_value(jar: requests.cookies.RequestsCookieJar, name: str) -> str | None:
+    """Safely retrieve a single cookie value by name."""
+    for c in jar:
+        if c.name == name:
+            return c.value
+    return None
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _extract_hidden_fields(html: str) -> dict:
+    """Parse all <input type='hidden'> fields from a login form."""
+    fields = {}
+    for tag in re.findall(r'<input[^>]+type=["\']hidden["\'][^>]*/?>',
+                          html, re.IGNORECASE):
+        name  = re.search(r'name=["\']([^"\']+)["\']',  tag, re.IGNORECASE)
+        value = re.search(r'value=["\']([^"\']*)["\']', tag, re.IGNORECASE)
+        if name:
+            fields[name.group(1)] = value.group(1) if value else ""
+    return fields
+
+
+def _extract_form_action(html: str, base_url: str) -> str:
+    """Return the form action URL, falling back to base_url if not found."""
+    match = re.search(r'<form[^>]+action=["\']([^"\']+)["\']', html, re.IGNORECASE)
+    if match:
+        return urljoin(base_url, match.group(1))
+    return base_url
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    if USERNAME == "your_username_here" or PASSWORD == "your_password_here":
+        print("ERROR: Set your credentials via environment variables:")
+        print("  export MLS_USERNAME='your_user'")
+        print("  export MLS_PASSWORD='your_pass'")
+        sys.exit(1)
+
+    try:
+        cookie_jar = get_session_cookies(USERNAME, PASSWORD)
+    except RuntimeError as e:
+        print(f"\n✗ {e}")
+        sys.exit(1)
+
+    jsessionid = get_cookie_value(cookie_jar, "JSESSIONID")
+    print(f"\n✓ JSESSIONID = {jsessionid}")
+    print(f"\nFull Cookie header:\n  {cookies_to_header(cookie_jar)}")
+
+    # ── Optional: fire the MLS search API ────────────────────────────────────
+    print("\n--- Running sample MLS search ---")
+    _run_sample_search(cookie_jar)
+
+
+def _run_sample_search(cookie_jar: requests.cookies.RequestsCookieJar):
+    SEARCH_URL = "https://bridge.connectmls.com/api/search/addresses/_search"
+    payload = {
+        "searchclass": "RE",
+        "searchtype": "LISTING",
+        "boundaries": None,
+        "layers": [],
+        "report": "agent-rd-table",
+        "fields": [
+            {"ordinal": None, "id": "PROXIMITY_SEARCH", "value": None, "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "MLS_STATUS",
+             "value": "ACTV,BOMK,AC,NEW,PCH,CS", "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "CITY", "value": "BURLINGAME",
+             "option": "", "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "COUNTY_OR_PARISH", "value": "",
+             "option": None, "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "SUBDIVISION_NAME", "value": "",
+             "option": "", "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "SRCHPRICE", "value": None, "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "BUILDING_TYPE", "value": "",
+             "option": "", "min": None, "max": None, "none": "", "all": ""},
+            {"ordinal": None, "id": "BEDROOMS_TOTAL", "value": None, "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "BATHROOMS_FULL", "value": None, "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "SQFT", "value": None, "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "DEFAULT_ADDRESS_SEARCH", "value": "",
+             "option": None, "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "SOURCE_MLS",
+             "value": "BR,CC,BE,ML,SF,BA,ME,CR,CL,CD",
+             "option": "", "min": None, "max": None, "none": None, "all": None},
+        ],
+        "record": True,
+        "extraSearchValues": None,
+        "folder_id": None,
+        "search_id": None,
+        "screener_filter_statuses": [],
+        "screener": None,
+        "selectedReceivedDate": None,
+        "context_data": {},
+        "accumulated": "all",
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/121.0.0.0 Safari/537.36"
+        ),
+    }
+
+    resp = requests.post(
+        SEARCH_URL,
+        json=payload,
+        cookies=cookie_jar,
+        headers=headers,
+        timeout=30,
+    )
+
+    print(f"Search API status: {resp.status_code}")
+    if resp.ok:
+        data = resp.json()
+        print(json.dumps(data, indent=2)[:800])
+    else:
+        print(f"Response: {resp.text[:400]}")
+
+
+if __name__ == "__main__":
+    main()

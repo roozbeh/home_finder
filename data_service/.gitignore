@@ -1,0 +1,6 @@
+.env
+cookies.json
+*.pyc
+__pycache__/
+.wdm/
+env
