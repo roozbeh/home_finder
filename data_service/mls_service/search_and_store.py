@@ -47,7 +47,7 @@ SEARCH_PAYLOAD = {
         {"ordinal": None, "id": "MLS_STATUS",
          "value": "ACTV,BOMK,AC,NEW,PCH,CS",
          "option": None, "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "CITY", "value": "BURLINGAME",
+        {"ordinal": None, "id": "CITY", "value": "BELMONT,BRISBANE,COLMA,DALY CITY,EASTPAALTO,FOSTERCITY,HALFMO BAY,LOS ALTOS,LOS GATOS,PACIFICA,PORTOLA,SAN CARLOS,SARATOGA,ATHERTON,WOODSIDE",
          "option": "", "min": None, "max": None, "none": None, "all": None},
         {"ordinal": None, "id": "COUNTY_OR_PARISH", "value": "",
          "option": None, "min": None, "max": None, "none": None, "all": None},
