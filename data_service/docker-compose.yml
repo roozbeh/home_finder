@@ -52,6 +52,11 @@ services:
       - env                      # MONGO_URI points to Atlas
     ports:
       - "8080:5000"         # home finder chat + listings browser → http://localhost:8080
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
 
 volumes:
   # mongo_data:   # uncomment when re-enabling local mongo
