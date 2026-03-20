@@ -16,12 +16,88 @@
     .badge-BOMK { background-color: #6c757d; }
     .badge-AC   { background-color: #6610f2; }
     .card       { border: none; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+    .listing-thumb {
+      width: 64px; height: 48px; object-fit: cover;
+      border-radius: 4px; cursor: pointer; display: block;
+      transition: opacity .15s;
+    }
+    .listing-thumb:hover { opacity: .8; }
+    .no-thumb {
+      width: 64px; height: 48px; background: #dde3f0;
+      border-radius: 4px; display: flex; align-items: center;
+      justify-content: center; font-size: 1.4rem;
+    }
+    /* ── Photo gallery overlay ── */
+    #galleryOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.92); z-index: 9999;
+      flex-direction: column; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    #galleryOverlay.open { display: flex; }
+    #galleryClose {
+      position: absolute; top: 16px; right: 16px;
+      background: rgba(255,255,255,.15); border: none; color: #fff;
+      width: 38px; height: 38px; border-radius: 50%; font-size: 1.1rem;
+      cursor: pointer; line-height: 38px; text-align: center;
+    }
+    #galleryClose:hover { background: rgba(255,255,255,.3); }
+    #galleryImg { max-width: 90vw; max-height: 74vh; object-fit: contain; border-radius: 6px; }
+    #galleryNav { display: flex; align-items: center; gap: 20px; margin-top: 14px; }
+    .gallery-btn {
+      background: rgba(255,255,255,.15); border: none; color: #fff;
+      width: 44px; height: 44px; border-radius: 50%; font-size: 1.5rem;
+      cursor: pointer; line-height: 44px; text-align: center;
+    }
+    .gallery-btn:hover { background: rgba(255,255,255,.35); }
+    #galleryCounter { color: #fff; font-size: .9rem; min-width: 64px; text-align: center; }
+    #galleryTitle   { color: rgba(255,255,255,.65); font-size: .82rem; margin-bottom: 10px; }
+    /* ── Login modal ── */
+    #loginOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.5); z-index: 9998;
+      align-items: center; justify-content: center;
+    }
+    #loginOverlay.open { display: flex; }
+    #loginBox {
+      background: #fff; border-radius: 16px; padding: 32px;
+      max-width: 380px; width: calc(100% - 40px);
+      box-shadow: 0 8px 40px rgba(0,0,0,.25);
+    }
+    .login-input {
+      width: 100%; padding: 10px 14px; border: 1.5px solid #ddd;
+      border-radius: 8px; font-size: .93rem; outline: none;
+      box-sizing: border-box;
+    }
+    .login-input:focus { border-color: #092a56; }
+    .login-btn-primary {
+      width: 100%; padding: 12px; background: #092a56; color: #fff;
+      border: none; border-radius: 8px; font-size: .95rem;
+      font-weight: 600; cursor: pointer;
+    }
+    .login-btn-primary:hover { background: #1a4a8a; }
+    .login-btn-skip {
+      width: 100%; padding: 8px; background: none; color: #888;
+      border: none; font-size: .85rem; margin-top: 8px; cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <nav class="navbar navbar-dark mb-4">
     <div class="container-fluid px-4">
-      <a class="navbar-brand fw-bold fs-5" href="/">🏠 MLS Listings</a>
+      <a class="navbar-brand fw-bold fs-5" href="/">🏠 iPronto</a>
+      <div class="d-flex gap-3 align-items-center">
+        <a class="nav-link text-white-50" href="/">💬 Chat</a>
+        <a class="nav-link text-white-50" href="/search">Browse Listings</a>
+        <div id="navUserStatus">
+          <button id="navLoginBtn" class="btn btn-sm btn-outline-light" onclick="showLoginModal()">
+            👤 Sign in
+          </button>
+          <span id="navUserGreeting" class="text-white-50 small d-none" style="cursor:default;">
+            👤 <span id="navUserName"></span>
+          </span>
+        </div>
+      </div>
     </div>
   </nav>
 
@@ -29,6 +105,149 @@
     {% block content %}{% endblock %}
   </div>
 
+  <!-- ── Photo Gallery Overlay ── -->
+  <div id="galleryOverlay" onclick="if(event.target===this)closeGallery()">
+    <button id="galleryClose" onclick="closeGallery()">✕</button>
+    <div id="galleryTitle"></div>
+    <img id="galleryImg" src="" alt="">
+    <div id="galleryNav">
+      <button class="gallery-btn" onclick="galleryPrev()">‹</button>
+      <span id="galleryCounter"></span>
+      <button class="gallery-btn" onclick="galleryNext()">›</button>
+    </div>
+  </div>
+
+  <!-- ── Login Modal ── -->
+  <div id="loginOverlay" onclick="if(event.target===this)closeLoginModal()">
+    <div id="loginBox">
+      <h5 style="margin:0 0 6px;color:#092a56;">Welcome to iPronto</h5>
+      <p style="color:#666;font-size:.9rem;margin-bottom:20px;">
+        Sign in to save your preferences and get personalised recommendations.
+      </p>
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:4px;">Your Name</label>
+        <input id="loginName" type="text" class="login-input" placeholder="Jane Smith">
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:4px;">Email</label>
+        <input id="loginEmail" type="email" class="login-input" placeholder="jane@example.com">
+      </div>
+      <div id="loginError" style="display:none;color:#c0392b;font-size:.85rem;margin-bottom:12px;"></div>
+      <button class="login-btn-primary" onclick="submitLogin()">Continue →</button>
+      <button class="login-btn-skip" onclick="closeLoginModal()">Maybe later</button>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // ── Gallery ──────────────────────────────────────────────────────────────
+    let _gPhotos = [], _gIdx = 0;
+
+    function openGallery(photos, startIdx, title) {
+      if (!photos || !photos.length) return;
+      _gPhotos = photos;
+      _gIdx    = startIdx || 0;
+      document.getElementById('galleryTitle').textContent = title || '';
+      document.getElementById('galleryOverlay').classList.add('open');
+      _showGalleryPhoto();
+      document.addEventListener('keydown', _galleryKey);
+    }
+
+    function closeGallery() {
+      document.getElementById('galleryOverlay').classList.remove('open');
+      document.removeEventListener('keydown', _galleryKey);
+    }
+
+    function _showGalleryPhoto() {
+      document.getElementById('galleryImg').src = _gPhotos[_gIdx];
+      document.getElementById('galleryCounter').textContent =
+        `${_gIdx + 1} / ${_gPhotos.length}`;
+    }
+
+    function galleryNext() { _gIdx = (_gIdx + 1) % _gPhotos.length; _showGalleryPhoto(); }
+    function galleryPrev() { _gIdx = (_gIdx - 1 + _gPhotos.length) % _gPhotos.length; _showGalleryPhoto(); }
+
+    function _galleryKey(e) {
+      if      (e.key === 'ArrowRight') galleryNext();
+      else if (e.key === 'ArrowLeft')  galleryPrev();
+      else if (e.key === 'Escape')     closeGallery();
+    }
+
+    // Delegate click on any .listing-thumb element
+    document.addEventListener('click', e => {
+      const thumb = e.target.closest('.listing-thumb');
+      if (!thumb) return;
+      const photos = JSON.parse(thumb.dataset.photos || '[]');
+      const title  = thumb.dataset.title || '';
+      if (!photos.length && thumb.src) openGallery([thumb.src], 0, title);
+      else openGallery(photos, 0, title);
+    });
+
+    // ── Auth ─────────────────────────────────────────────────────────────────
+    let _loginCallback = null;
+
+    function getUser() {
+      try { return JSON.parse(localStorage.getItem('iprontoUser')); }
+      catch { return null; }
+    }
+
+    function updateUserUI(user) {
+      if (!user) return;
+      const loginBtn    = document.getElementById('navLoginBtn');
+      const userGreet   = document.getElementById('navUserGreeting');
+      const userNameEl  = document.getElementById('navUserName');
+      if (loginBtn)   loginBtn.classList.add('d-none');
+      if (userGreet)  userGreet.classList.remove('d-none');
+      if (userNameEl) userNameEl.textContent = user.name;
+    }
+
+    function showLoginModal(callback) {
+      _loginCallback = callback || null;
+      document.getElementById('loginOverlay').classList.add('open');
+      document.getElementById('loginError').style.display = 'none';
+      setTimeout(() => document.getElementById('loginName').focus(), 80);
+    }
+
+    function closeLoginModal() {
+      document.getElementById('loginOverlay').classList.remove('open');
+    }
+
+    async function submitLogin() {
+      const name  = document.getElementById('loginName').value.trim();
+      const email = document.getElementById('loginEmail').value.trim();
+      const errEl = document.getElementById('loginError');
+      if (!name || !email) {
+        errEl.textContent = 'Please enter your name and email.';
+        errEl.style.display = 'block';
+        return;
+      }
+      try {
+        const res  = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        localStorage.setItem('iprontoUser', JSON.stringify(data));
+        closeLoginModal();
+        updateUserUI(data);
+        if (_loginCallback) { _loginCallback(); _loginCallback = null; }
+      } catch (e) {
+        errEl.textContent = 'Something went wrong. Please try again.';
+        errEl.style.display = 'block';
+      }
+    }
+
+    document.getElementById('loginName').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('loginEmail').focus();
+    });
+    document.getElementById('loginEmail').addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitLogin();
+    });
+
+    // Init — restore session
+    updateUserUI(getUser());
+  </script>
 </body>
 </html>

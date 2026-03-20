@@ -1,0 +1,6 @@
+# Local development dependencies for home_finder
+# Install with: pip3 install -r requirements.txt
+
+anthropic
+python-dotenv
+pytest

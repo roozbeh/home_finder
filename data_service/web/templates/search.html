@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}MLS Listings — Search{% endblock %}
+
+{% block content %}
+<!-- ── Search / filter card ──────────────────────────────────────────────── -->
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="get" action="/search" class="row g-2 align-items-end">
+
+      <div class="col-12 col-md-3">
+        <label class="form-label fw-semibold mb-1">Search</label>
+        <input type="text" name="q" class="form-control"
+               placeholder="Address, MLS ID, city…" value="{{ q }}">
+      </div>
+
+      <div class="col-6 col-md-2">
+        <label class="form-label fw-semibold mb-1">City</label>
+        <select name="city" class="form-select">
+          <option value="">All cities</option>
+          {% for c in cities %}
+          <option value="{{ c }}" {% if c == city %}selected{% endif %}>{{ c.title() }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-6 col-md-2">
+        <label class="form-label fw-semibold mb-1">Status</label>
+        <select name="status" class="form-select">
+          <option value="">Any</option>
+          {% for s in ["ACTV","NEW","PCH","CS","BOMK","AC"] %}
+          <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-6 col-md-1">
+        <label class="form-label fw-semibold mb-1">Min $</label>
+        <input type="number" name="min_price" class="form-control"
+               placeholder="0" value="{{ min_price }}">
+      </div>
+
+      <div class="col-6 col-md-1">
+        <label class="form-label fw-semibold mb-1">Max $</label>
+        <input type="number" name="max_price" class="form-control"
+               placeholder="any" value="{{ max_price }}">
+      </div>
+
+      <div class="col-6 col-md-1">
+        <label class="form-label fw-semibold mb-1">Min beds</label>
+        <input type="number" name="min_beds" class="form-control"
+               placeholder="any" min="0" value="{{ min_beds }}">
+      </div>
+
+      <div class="col-6 col-md-2">
+        <button type="submit" class="btn btn-primary w-100">Search</button>
+      </div>
+
+      {% if q or city or status or min_price or max_price or min_beds %}
+      <div class="col-12 col-md-auto">
+        <a href="/search" class="btn btn-outline-secondary w-100">Clear</a>
+      </div>
+      {% endif %}
+
+    </form>
+  </div>
+</div>
+
+<!-- ── Results ───────────────────────────────────────────────────────────── -->
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <span class="text-muted small">
+    {{ total }} listing{{ 's' if total != 1 else '' }} found
+    — page {{ page }} of {{ total_pages }}
+  </span>
+</div>
+
+{% if listings %}
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 small">
+      <thead>
+        <tr>
+          <th style="width:72px;">Photo</th>
+          <th>MLS ID</th>
+          <th>Address</th>
+          <th>City</th>
+          <th>Status</th>
+          <th class="text-end">List Price</th>
+          <th class="text-center">Beds</th>
+          <th class="text-center">Baths</th>
+          <th class="text-end">Sq Ft</th>
+          <th class="text-center">Year</th>
+          <th class="text-center">DOM</th>
+          <th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in listings %}
+        {% set lp = l.get('photos') or [] %}
+        <tr>
+          <td style="padding:6px;">
+            {% if l.get('thumbphoto') %}
+            <img src="{{ l.thumbphoto }}" alt="" class="listing-thumb"
+                 data-photos='{{ lp | tojson }}'
+                 data-title='{{ l.STREET_ADDRESS or "" }}'
+                 onerror="this.parentElement.innerHTML='<div class=no-thumb>🏠</div>'">
+            {% else %}
+            <div class="no-thumb">🏠</div>
+            {% endif %}
+          </td>
+          <td>
+            <a href="/listing/{{ l.LISTING_ID }}" class="text-decoration-none fw-semibold">
+              {{ l.LISTING_ID or '—' }}
+            </a>
+          </td>
+          <td>{{ l.STREET_ADDRESS or '—' }}</td>
+          <td>{{ (l.CITY or '').title() }}</td>
+          <td>
+            <span class="badge badge-{{ l.MLS_STATUS }} rounded-pill px-2">
+              {{ l.MLS_STATUS or '—' }}
+            </span>
+          </td>
+          <td class="text-end">${{ '{:,.0f}'.format(l.LIST_PRICE) if l.LIST_PRICE else '—' }}</td>
+          <td class="text-center">{{ l.BEDROOMS_TOTAL or '—' }}</td>
+          <td class="text-center">{{ l.BATHS_DISPLAY or l.BATHROOMS_FULL or '—' }}</td>
+          <td class="text-end">{{ '{:,.0f}'.format(l.SQFT) if l.SQFT else '—' }}</td>
+          <td class="text-center">{{ l.YEAR_BUILT or '—' }}</td>
+          <td class="text-center">{{ l.DAYS_ON_MARKET or '0' }}</td>
+          <td>{{ l.BUILDING_TYPE or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Pagination ─────────────────────────────────────────────────────────── -->
+{% if total_pages > 1 %}
+<nav class="mt-3">
+  <ul class="pagination pagination-sm justify-content-center">
+    {% set args = request.args.to_dict() %}
+
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+      {% set _ = args.update({'page': page - 1}) %}
+      <a class="page-link" href="/search?{{ args | urlencode }}">‹ Prev</a>
+    </li>
+
+    {% for p in range([1, page-2]|max, [total_pages+1, page+3]|min) %}
+    {% set _ = args.update({'page': p}) %}
+    <li class="page-item {% if p == page %}active{% endif %}">
+      <a class="page-link" href="/search?{{ args | urlencode }}">{{ p }}</a>
+    </li>
+    {% endfor %}
+
+    <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+      {% set _ = args.update({'page': page + 1}) %}
+      <a class="page-link" href="/search?{{ args | urlencode }}">Next ›</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="alert alert-info">No listings match your search.</div>
+{% endif %}
+{% endblock %}

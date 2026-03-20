@@ -1,25 +1,29 @@
 services:
 
-  # ── MongoDB ────────────────────────────────────────────────────────────────
-  mongo:
-    image: mongo:7
-    container_name: mls_mongo
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: mlsuser
-      MONGO_INITDB_ROOT_PASSWORD: mlspassword
-      MONGO_INITDB_DATABASE: mls
-    volumes:
-      - mongo_data:/data/db
-      - ./db:/docker-entrypoint-initdb.d:ro   # runs db/init.js on first start
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+  # ── MongoDB (local) ─────────────────────────────────────────────────────────
+  # Commented out — now using MongoDB Atlas (cloud).
+  # Uncomment to run a local instance for testing/development.
+  #
+  # mongo:
+  #   image: mongo:7
+  #   container_name: mls_mongo
+  #   restart: unless-stopped
+  #   command: ["mongod", "--quiet", "--logpath", "/dev/null"]
+  #   ports:
+  #     - "27017:27017"
+  #   environment:
+  #     MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
+  #     MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+  #     MONGO_INITDB_DATABASE: mls
+  #   volumes:
+  #     - mongo_data:/data/db
+  #     - ./db:/docker-entrypoint-initdb.d:ro
+  #   healthcheck:
+  #     test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 10s
 
   # ── Scraper / importer (Selenium + cron + status UI) ──────────────────────
   app:
@@ -28,15 +32,10 @@ services:
       dockerfile: Dockerfile
     container_name: mls_app
     restart: unless-stopped
-    depends_on:
-      mongo:
-        condition: service_healthy
+    env_file:
+      - env                      # MONGO_URI points to Atlas
     environment:
-      MLS_USERNAME: ${MLS_USERNAME}
-      MLS_PASSWORD: ${MLS_PASSWORD}
       HEADLESS: "true"
-      MONGO_URI: mongodb://mlsuser:mlspassword@mongo:27017/mls?authSource=admin
-      MONGO_DB: mls
     ports:
       - "8081:8081"         # scraper status dashboard → http://localhost:8081
     volumes:
@@ -45,19 +44,15 @@ services:
   # ── Flask web server (listings browser) ───────────────────────────────────
   web:
     build:
-      context: ./web
-      dockerfile: Dockerfile
+      context: .                 # data_service root — gives access to web/ AND agentic/
+      dockerfile: web/Dockerfile
     container_name: mls_web
     restart: unless-stopped
-    depends_on:
-      mongo:
-        condition: service_healthy
-    environment:
-      MONGO_URI: mongodb://mlsuser:mlspassword@mongo:27017/mls?authSource=admin
-      MONGO_DB: mls
+    env_file:
+      - env                      # MONGO_URI points to Atlas
     ports:
-      - "8080:5000"         # listings browser → http://localhost:8080
+      - "8080:5000"         # home finder chat + listings browser → http://localhost:8080
 
 volumes:
-  mongo_data:
+  # mongo_data:   # uncomment when re-enabling local mongo
   app_data:

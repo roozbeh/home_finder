@@ -1,5 +1,5 @@
 selenium==4.20.0
 webdriver-manager==4.0.1
 requests==2.31.0
-pymongo==4.7.2
+pymongo[srv]==4.7.2
 flask==3.0.3

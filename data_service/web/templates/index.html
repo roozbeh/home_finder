@@ -1,153 +1,770 @@
-{% extends "base.html" %}
-{% block title %}MLS Listings — Search{% endblock %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iPronto — Find Your Home</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --brand:      #092a56;
+      --brand-light:#1a4a8a;
+      --bubble-bot: #f0f4ff;
+      --bubble-usr: #092a56;
+      --bg:         #f5f6fa;
+    }
 
-{% block content %}
-<!-- ── Search / filter card ──────────────────────────────────────────────── -->
-<div class="card mb-4">
-  <div class="card-body">
-    <form method="get" action="/" class="row g-2 align-items-end">
+    * { box-sizing: border-box; }
 
-      <div class="col-12 col-md-3">
-        <label class="form-label fw-semibold mb-1">Search</label>
-        <input type="text" name="q" class="form-control"
-               placeholder="Address, MLS ID, city…" value="{{ q }}">
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+    }
+
+    /* ── Layout ── */
+    .chat-layout {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── Header ── */
+    .chat-header {
+      background: var(--brand);
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    .chat-header .logo { font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .chat-header .logo span { opacity: .85; font-size: .85rem; font-weight: 400; }
+    .chat-header a { color: rgba(255,255,255,.8); text-decoration: none; font-size: .85rem; }
+    .chat-header a:hover { color: #fff; }
+    .header-right { display: flex; align-items: center; gap: 16px; }
+
+    /* ── Messages area ── */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 16px;
+      scroll-behavior: smooth;
+    }
+
+    /* ── Message row ── */
+    .msg-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .msg-row.user { flex-direction: row-reverse; }
+
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+    .avatar.bot { background: var(--brand); color: #fff; }
+    .avatar.user { background: #dde3f0; color: var(--brand); }
+
+    .bubble {
+      max-width: calc(100% - 50px);
+    }
+    .bubble-inner {
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: .93rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg-row.bot  .bubble-inner { background: var(--bubble-bot); border-top-left-radius: 4px; color: #1a1a2e; }
+    .msg-row.user .bubble-inner { background: var(--bubble-usr); border-top-right-radius: 4px; color: #fff; }
+
+    /* ── Listing cards ── */
+    .listings-row {
+      display: flex;
+      gap: 14px;
+      overflow-x: auto;
+      padding: 12px 4px 4px;
+      scrollbar-width: thin;
+    }
+    .listing-card {
+      min-width: 240px;
+      max-width: 260px;
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.1);
+      overflow: hidden;
+      flex-shrink: 0;
+      transition: transform .15s;
+    }
+    .listing-card:hover { transform: translateY(-2px); }
+
+    .listing-photo {
+      height: 130px;
+      background: linear-gradient(135deg, #1a4a8a 0%, #092a56 60%, #051535 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.8rem;
+      color: rgba(255,255,255,.4);
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .listing-photo img {
+      width: 100%; height: 100%; object-fit: cover;
+      display: block; transition: opacity .15s;
+    }
+    .listing-photo img:hover { opacity: .88; }
+    .listing-photo .status-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+    .badge-ACTV { background: #198754; color: #fff; }
+    .badge-NEW  { background: #0d6efd; color: #fff; }
+    .badge-PCH  { background: #0dcaf0; color: #000; }
+    .badge-CS   { background: #ffc107; color: #000; }
+    .badge-BOMK { background: #6c757d; color: #fff; }
+    .badge-AC   { background: #6610f2; color: #fff; }
+
+    .listing-body { padding: 12px; }
+    .listing-price {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--brand);
+      margin-bottom: 2px;
+    }
+    .listing-address {
+      font-size: .82rem;
+      color: #444;
+      margin-bottom: 6px;
+      line-height: 1.3;
+    }
+    .listing-stats {
+      display: flex;
+      gap: 8px;
+      font-size: .78rem;
+      color: #666;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .listing-stat { display: flex; align-items: center; gap: 3px; }
+
+    .listing-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .btn-feedback {
+      flex: 1;
+      padding: 5px 8px;
+      border-radius: 8px;
+      border: 1.5px solid #ddd;
+      background: #fff;
+      cursor: pointer;
+      font-size: .82rem;
+      transition: all .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .btn-feedback:hover { border-color: var(--brand); background: #f0f4ff; }
+    .btn-feedback.voted-good { background: #d1f5e0; border-color: #198754; color: #198754; }
+    .btn-feedback.voted-bad  { background: #fde8e8; border-color: #dc3545; color: #dc3545; }
+    .btn-showing {
+      width: 100%;
+      margin-top: 6px;
+      padding: 6px;
+      border-radius: 8px;
+      background: var(--brand);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-size: .82rem;
+      transition: background .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    .btn-showing:hover { background: var(--brand-light); }
+
+    /* ── Typing indicator ── */
+    .typing-indicator {
+      display: none;
+      gap: 5px;
+      align-items: center;
+      padding: 10px 16px;
+    }
+    .typing-indicator.visible { display: flex; }
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #9ba3b8;
+      animation: bounce 1.2s infinite;
+    }
+    .dot:nth-child(2) { animation-delay: .2s; }
+    .dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-6px); }
+    }
+
+    /* ── Input area ── */
+    .chat-input-area {
+      flex-shrink: 0;
+      background: #fff;
+      border-top: 1px solid #e0e4ef;
+      padding: 14px 16px;
+    }
+    .input-row {
+      display: flex;
+      gap: 10px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .chat-input {
+      flex: 1;
+      border: 1.5px solid #d0d5e8;
+      border-radius: 24px;
+      padding: 10px 18px;
+      font-size: .93rem;
+      outline: none;
+      resize: none;
+      max-height: 120px;
+      overflow-y: auto;
+      line-height: 1.45;
+      transition: border-color .15s;
+      font-family: inherit;
+    }
+    .chat-input:focus { border-color: var(--brand); }
+    .send-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--brand);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s, opacity .15s;
+      align-self: flex-end;
+    }
+    .send-btn:hover { background: var(--brand-light); }
+    .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+    .input-hint {
+      text-align: center;
+      font-size: .75rem;
+      color: #aaa;
+      margin-top: 6px;
+    }
+
+    /* ── Error banner ── */
+    .error-banner {
+      display: none;
+      background: #fde8e8;
+      color: #c0392b;
+      padding: 8px 16px;
+      text-align: center;
+      font-size: .85rem;
+    }
+    .error-banner.visible { display: block; }
+
+    /* ── Photo gallery overlay ── */
+    #galleryOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.92); z-index: 9999;
+      flex-direction: column; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    #galleryOverlay.open { display: flex; }
+    #galleryClose {
+      position: absolute; top: 16px; right: 16px;
+      background: rgba(255,255,255,.15); border: none; color: #fff;
+      width: 38px; height: 38px; border-radius: 50%; font-size: 1.1rem;
+      cursor: pointer;
+    }
+    #galleryClose:hover { background: rgba(255,255,255,.3); }
+    #galleryImg { max-width: 90vw; max-height: 74vh; object-fit: contain; border-radius: 6px; }
+    #galleryNav { display: flex; align-items: center; gap: 20px; margin-top: 14px; }
+    .gallery-btn {
+      background: rgba(255,255,255,.15); border: none; color: #fff;
+      width: 44px; height: 44px; border-radius: 50%; font-size: 1.5rem;
+      cursor: pointer;
+    }
+    .gallery-btn:hover { background: rgba(255,255,255,.35); }
+    #galleryCounter { color: #fff; font-size: .9rem; min-width: 64px; text-align: center; }
+    #galleryTitle   { color: rgba(255,255,255,.65); font-size: .82rem; margin-bottom: 10px; }
+
+    /* ── Login modal ── */
+    #loginOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.5); z-index: 9998;
+      align-items: center; justify-content: center;
+    }
+    #loginOverlay.open { display: flex; }
+    #loginBox {
+      background: #fff; border-radius: 16px; padding: 32px;
+      max-width: 380px; width: calc(100% - 40px);
+      box-shadow: 0 8px 40px rgba(0,0,0,.25);
+    }
+    .login-input {
+      width: 100%; padding: 10px 14px; border: 1.5px solid #ddd;
+      border-radius: 8px; font-size: .93rem; outline: none;
+      box-sizing: border-box; margin-bottom: 14px;
+    }
+    .login-input:focus { border-color: var(--brand); }
+    .login-btn-primary {
+      width: 100%; padding: 12px; background: var(--brand); color: #fff;
+      border: none; border-radius: 8px; font-size: .95rem;
+      font-weight: 600; cursor: pointer;
+    }
+    .login-btn-primary:hover { background: var(--brand-light); }
+    .login-btn-skip {
+      width: 100%; padding: 8px; background: none; color: #888;
+      border: none; font-size: .85rem; margin-top: 8px; cursor: pointer;
+    }
+    #headerUserGreeting { font-size: .85rem; color: rgba(255,255,255,.8); }
+    #headerLoginBtn {
+      background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+      color: #fff; padding: 5px 12px; border-radius: 20px; font-size: .82rem;
+      cursor: pointer; white-space: nowrap;
+    }
+    #headerLoginBtn:hover { background: rgba(255,255,255,.25); }
+  </style>
+</head>
+<body>
+
+<div class="chat-layout">
+
+  <!-- Header -->
+  <header class="chat-header">
+    <div class="logo">
+      🏠 iPronto <span>Bay Area Home Finder</span>
+    </div>
+    <div class="header-right">
+      <a href="/search">Browse All Listings →</a>
+      <!-- User status -->
+      <div id="headerUserStatus">
+        <button id="headerLoginBtn" onclick="showLoginModal()">👤 Sign in</button>
+        <span id="headerUserGreeting" style="display:none;">👤 <span id="headerUserName"></span></span>
       </div>
+    </div>
+  </header>
 
-      <div class="col-6 col-md-2">
-        <label class="form-label fw-semibold mb-1">City</label>
-        <select name="city" class="form-select">
-          <option value="">All cities</option>
-          {% for c in cities %}
-          <option value="{{ c }}" {% if c == city %}selected{% endif %}>{{ c.title() }}</option>
-          {% endfor %}
-        </select>
-      </div>
+  <!-- Error banner -->
+  <div class="error-banner" id="errorBanner"></div>
 
-      <div class="col-6 col-md-2">
-        <label class="form-label fw-semibold mb-1">Status</label>
-        <select name="status" class="form-select">
-          <option value="">Any</option>
-          {% for s in ["ACTV","NEW","PCH","CS","BOMK","AC"] %}
-          <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
-      </div>
+  <!-- Messages -->
+  <div class="chat-messages" id="chatMessages">
+    <!-- filled by JS -->
+  </div>
 
-      <div class="col-6 col-md-1">
-        <label class="form-label fw-semibold mb-1">Min $</label>
-        <input type="number" name="min_price" class="form-control"
-               placeholder="0" value="{{ min_price }}">
-      </div>
+  <!-- Input -->
+  <div class="chat-input-area">
+    <div class="input-row">
+      <textarea
+        id="chatInput"
+        class="chat-input"
+        placeholder="Tell me what you're looking for…"
+        rows="1"
+      ></textarea>
+      <button class="send-btn" id="sendBtn" title="Send">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+    <div class="input-hint">Press Enter to send &nbsp;·&nbsp; Shift+Enter for new line</div>
+  </div>
 
-      <div class="col-6 col-md-1">
-        <label class="form-label fw-semibold mb-1">Max $</label>
-        <input type="number" name="max_price" class="form-control"
-               placeholder="any" value="{{ max_price }}">
-      </div>
+</div>
 
-      <div class="col-6 col-md-1">
-        <label class="form-label fw-semibold mb-1">Min beds</label>
-        <input type="number" name="min_beds" class="form-control"
-               placeholder="any" min="0" value="{{ min_beds }}">
-      </div>
-
-      <div class="col-6 col-md-2">
-        <button type="submit" class="btn btn-primary w-100">Search</button>
-      </div>
-
-      {% if q or city or status or min_price or max_price or min_beds %}
-      <div class="col-12 col-md-auto">
-        <a href="/" class="btn btn-outline-secondary w-100">Clear</a>
-      </div>
-      {% endif %}
-
-    </form>
+<!-- ── Photo Gallery Overlay ── -->
+<div id="galleryOverlay" onclick="if(event.target===this)closeGallery()">
+  <button id="galleryClose" onclick="closeGallery()">✕</button>
+  <div id="galleryTitle"></div>
+  <img id="galleryImg" src="" alt="">
+  <div id="galleryNav">
+    <button class="gallery-btn" onclick="galleryPrev()">‹</button>
+    <span id="galleryCounter"></span>
+    <button class="gallery-btn" onclick="galleryNext()">›</button>
   </div>
 </div>
 
-<!-- ── Results ───────────────────────────────────────────────────────────── -->
-<div class="d-flex justify-content-between align-items-center mb-2">
-  <span class="text-muted small">
-    {{ total }} listing{{ 's' if total != 1 else '' }} found
-    — page {{ page }} of {{ total_pages }}
-  </span>
-</div>
-
-{% if listings %}
-<div class="card">
-  <div class="table-responsive">
-    <table class="table table-hover mb-0 small">
-      <thead>
-        <tr>
-          <th>MLS ID</th>
-          <th>Address</th>
-          <th>City</th>
-          <th>Status</th>
-          <th class="text-end">List Price</th>
-          <th class="text-center">Beds</th>
-          <th class="text-center">Baths</th>
-          <th class="text-end">Sq Ft</th>
-          <th class="text-center">Year</th>
-          <th class="text-center">DOM</th>
-          <th>Type</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for l in listings %}
-        <tr>
-          <td>
-            <a href="/listing/{{ l.LISTING_ID }}" class="text-decoration-none fw-semibold">
-              {{ l.LISTING_ID or '—' }}
-            </a>
-          </td>
-          <td>{{ l.STREET_ADDRESS or '—' }}</td>
-          <td>{{ (l.CITY or '').title() }}</td>
-          <td>
-            <span class="badge badge-{{ l.MLS_STATUS }} rounded-pill px-2">
-              {{ l.MLS_STATUS or '—' }}
-            </span>
-          </td>
-          <td class="text-end">${{ '{:,.0f}'.format(l.LIST_PRICE) if l.LIST_PRICE else '—' }}</td>
-          <td class="text-center">{{ l.BEDROOMS_TOTAL or '—' }}</td>
-          <td class="text-center">{{ l.BATHS_DISPLAY or l.BATHROOMS_FULL or '—' }}</td>
-          <td class="text-end">{{ '{:,.0f}'.format(l.SQFT) if l.SQFT else '—' }}</td>
-          <td class="text-center">{{ l.YEAR_BUILT or '—' }}</td>
-          <td class="text-center">{{ l.DAYS_ON_MARKET or '0' }}</td>
-          <td>{{ l.BUILDING_TYPE or '—' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<!-- ── Login Modal ── -->
+<div id="loginOverlay" onclick="if(event.target===this)closeLoginModal()">
+  <div id="loginBox">
+    <h5 style="margin:0 0 6px;color:#092a56;">Welcome to iPronto</h5>
+    <p style="color:#666;font-size:.9rem;margin-bottom:20px;">
+      Sign in to save your preferences and get personalised recommendations.
+    </p>
+    <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:4px;">Your Name</label>
+    <input id="loginName" type="text" class="login-input" placeholder="Jane Smith">
+    <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:4px;">Email</label>
+    <input id="loginEmail" type="email" class="login-input" placeholder="jane@example.com">
+    <div id="loginError" style="display:none;color:#c0392b;font-size:.85rem;margin-bottom:12px;"></div>
+    <button class="login-btn-primary" onclick="submitLogin()">Continue →</button>
+    <button class="login-btn-skip" onclick="closeLoginModal()">Maybe later</button>
   </div>
 </div>
 
-<!-- ── Pagination ─────────────────────────────────────────────────────────── -->
-{% if total_pages > 1 %}
-<nav class="mt-3">
-  <ul class="pagination pagination-sm justify-content-center">
-    {% set args = request.args.to_dict() %}
+<script>
+  const CALENDLY_URL = {{ calendly_url | tojson }};
+  const SESSION_ID   = crypto.randomUUID();
+  const INITIAL_MSG  = "Hi there! I'm Maya, your Bay Area home finding assistant. 👋\n\nI'm here to help you find the perfect home. Tell me — what are you looking for? For example, are you searching for a family home, a starter home, or something specific in mind?";
 
-    <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-      {% set _ = args.update({'page': page - 1}) %}
-      <a class="page-link" href="/?{{ args | urlencode }}">‹ Prev</a>
-    </li>
+  let history   = [];
+  let isLoading = false;
 
-    {% for p in range([1, page-2]|max, [total_pages+1, page+3]|min) %}
-    {% set _ = args.update({'page': p}) %}
-    <li class="page-item {% if p == page %}active{% endif %}">
-      <a class="page-link" href="/?{{ args | urlencode }}">{{ p }}</a>
-    </li>
-    {% endfor %}
+  const messagesEl = document.getElementById("chatMessages");
+  const inputEl    = document.getElementById("chatInput");
+  const sendBtn    = document.getElementById("sendBtn");
+  const errorEl    = document.getElementById("errorBanner");
 
-    <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
-      {% set _ = args.update({'page': page + 1}) %}
-      <a class="page-link" href="/?{{ args | urlencode }}">Next ›</a>
-    </li>
-  </ul>
-</nav>
-{% endif %}
+  // ── Init ──────────────────────────────────────────────────────────────────
+  history.push({ role: "assistant", content: INITIAL_MSG });
+  appendMessage("bot", INITIAL_MSG, []);
+  scrollToBottom();
+  _initUserUI();
 
-{% else %}
-<div class="alert alert-info">No listings match your search.</div>
-{% endif %}
-{% endblock %}
+  // ── Input handlers ────────────────────────────────────────────────────────
+  inputEl.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  sendBtn.addEventListener("click", send);
+  inputEl.addEventListener("input", () => {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+  });
+
+  // ── Send ──────────────────────────────────────────────────────────────────
+  async function send() {
+    const text = inputEl.value.trim();
+    if (!text || isLoading) return;
+
+    inputEl.value = "";
+    inputEl.style.height = "auto";
+    hideError();
+    setLoading(true);
+
+    history.push({ role: "user", content: text });
+    appendMessage("user", text, []);
+    scrollToBottom();
+
+    const typingEl = appendTyping();
+    scrollToBottom();
+
+    try {
+      const res = await fetch("/api/chat", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ messages: history, session_id: SESSION_ID }),
+      });
+      const data = await res.json();
+      typingEl.remove();
+
+      if (data.error) {
+        showError(data.error);
+        history.pop();
+      } else {
+        history.push({ role: "assistant", content: data.message });
+        appendMessage("bot", data.message, data.listings || []);
+        scrollToBottom();
+        if (data.message.includes("OPEN_CALENDLY")) {
+          setTimeout(() => window.open(CALENDLY_URL, "_blank"), 400);
+        }
+      }
+    } catch (err) {
+      typingEl.remove();
+      showError("Network error. Please check your connection and try again.");
+      history.pop();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Render helpers ────────────────────────────────────────────────────────
+  function appendMessage(role, text, listings) {
+    const row = document.createElement("div");
+    row.className = `msg-row ${role}`;
+
+    const avatar = document.createElement("div");
+    avatar.className = `avatar ${role}`;
+    avatar.textContent = role === "bot" ? "🏡" : "You";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    const inner = document.createElement("div");
+    inner.className = "bubble-inner";
+    inner.textContent = text.replace(/OPEN_CALENDLY\S*/g, "").trim();
+    bubble.appendChild(inner);
+
+    if (listings && listings.length > 0) {
+      bubble.appendChild(buildListingsRow(listings));
+    }
+
+    if (role === "bot") { row.appendChild(avatar); row.appendChild(bubble); }
+    else                { row.appendChild(bubble); row.appendChild(avatar); }
+
+    messagesEl.appendChild(row);
+    return row;
+  }
+
+  function appendTyping() {
+    const row = document.createElement("div");
+    row.className = "msg-row bot";
+    row.innerHTML = `
+      <div class="avatar bot">🏡</div>
+      <div class="bubble">
+        <div class="bubble-inner" style="padding:10px 16px;">
+          <div class="typing-indicator visible">
+            <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          </div>
+        </div>
+      </div>`;
+    messagesEl.appendChild(row);
+    return row;
+  }
+
+  function buildListingsRow(listings) {
+    const wrap = document.createElement("div");
+    wrap.className = "listings-row";
+
+    listings.forEach(l => {
+      const price  = l.LIST_PRICE  ? "$" + l.LIST_PRICE.toLocaleString() : "N/A";
+      const beds   = l.BEDROOMS_TOTAL  || "?";
+      const baths  = l.BATHS_DISPLAY || l.BATHROOMS_FULL || "?";
+      const sqft   = l.SQFT ? l.SQFT.toLocaleString() + " sqft" : "";
+      const addr   = l.STREET_ADDRESS || "Unknown address";
+      const city   = l.CITY ? l.CITY.charAt(0) + l.CITY.slice(1).toLowerCase() : "";
+      const status = l.MLS_STATUS || "";
+      const id     = l.LISTING_ID || "";
+      const photos = l.photos || [];
+      const thumb  = l.thumbphoto || (photos.length ? photos[0] : "");
+
+      const card = document.createElement("div");
+      card.className = "listing-card";
+
+      // Build photo area
+      let photoHTML;
+      if (thumb) {
+        const galleryPhotos = photos.length ? photos : [thumb];
+        const cacheKey = 'p' + (_photoCacheIdx++);
+        _photoCache.set(cacheKey, galleryPhotos);
+        const safeAddr = addr.replace(/'/g, "\\'");
+        photoHTML = `
+          <div class="listing-photo" onclick="_openCachedGallery('${cacheKey}', '${safeAddr}')">
+            <img src="${thumb}" alt="" onerror="this.parentElement.innerHTML='🏠'">
+            <span class="status-badge badge-${status}">${status}</span>
+          </div>`;
+      } else {
+        photoHTML = `
+          <div class="listing-photo">
+            🏠
+            <span class="status-badge badge-${status}">${status}</span>
+          </div>`;
+      }
+
+      card.innerHTML = `
+        ${photoHTML}
+        <div class="listing-body">
+          <div class="listing-price">${price}</div>
+          <div class="listing-address">${addr}, ${city}</div>
+          <div class="listing-stats">
+            <span class="listing-stat">🛏 ${beds} bd</span>
+            <span class="listing-stat">🚿 ${baths} ba</span>
+            ${sqft ? `<span class="listing-stat">📐 ${sqft}</span>` : ""}
+          </div>
+          <div class="listing-actions">
+            <button class="btn-feedback" data-id="${id}" onclick="vote(this, '${id}', 'good')">👍 Looks good</button>
+            <button class="btn-feedback" data-id="${id}" onclick="vote(this, '${id}', 'bad')">👎 Pass</button>
+          </div>
+          <button class="btn-showing" onclick="bookShowing('${addr}, ${city}')">
+            📅 Book a Showing
+          </button>
+          ${id ? `<a href="/listing/${id}" target="_blank" style="display:block;text-align:center;margin-top:6px;font-size:.78rem;color:#888;">View full details</a>` : ""}
+        </div>`;
+
+      wrap.appendChild(card);
+    });
+
+    return wrap;
+  }
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+  async function vote(btn, listingId, feedback) {
+    const user = getUser();
+    if (!user) {
+      showLoginModal(() => vote(btn, listingId, feedback));
+      return;
+    }
+
+    const siblings = btn.parentElement.querySelectorAll(".btn-feedback");
+    siblings.forEach(b => b.classList.remove("voted-good", "voted-bad"));
+    btn.classList.add(feedback === "good" ? "voted-good" : "voted-bad");
+
+    await fetch("/api/feedback", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        listing_id: listingId,
+        feedback,
+        user_id:    user.user_id,
+        session_id: SESSION_ID,
+      }),
+    }).catch(() => {});
+
+    const label = feedback === "good" ? "looks good / interested" : "not a match / passing on it";
+    history.push({ role: "user", content: `I ${label} for listing ${listingId}.` });
+  }
+
+  function bookShowing(address) {
+    const url = `${CALENDLY_URL}?name=${encodeURIComponent(address)}`;
+    window.open(url, "_blank", "width=700,height=700");
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────────────────
+  function setLoading(val) {
+    isLoading = val;
+    sendBtn.disabled = val;
+    inputEl.disabled = val;
+    if (!val) inputEl.focus();
+  }
+
+  function scrollToBottom() {
+    setTimeout(() => { messagesEl.scrollTop = messagesEl.scrollHeight; }, 30);
+  }
+
+  function showError(msg) { errorEl.textContent = msg; errorEl.classList.add("visible"); }
+  function hideError()    { errorEl.classList.remove("visible"); }
+
+  // ── Photo gallery ─────────────────────────────────────────────────────────
+  let _gPhotos = [], _gIdx = 0;
+  const _photoCache = new Map();
+  let _photoCacheIdx = 0;
+
+  function _openCachedGallery(key, title) {
+    openGallery(_photoCache.get(key) || [], 0, title);
+  }
+
+  function openGallery(photos, startIdx, title) {
+    if (!photos || !photos.length) return;
+    _gPhotos = photos;
+    _gIdx    = startIdx || 0;
+    document.getElementById('galleryTitle').textContent = title || '';
+    document.getElementById('galleryOverlay').classList.add('open');
+    _showGalleryPhoto();
+    document.addEventListener('keydown', _galleryKey);
+  }
+
+  function closeGallery() {
+    document.getElementById('galleryOverlay').classList.remove('open');
+    document.removeEventListener('keydown', _galleryKey);
+  }
+
+  function _showGalleryPhoto() {
+    document.getElementById('galleryImg').src = _gPhotos[_gIdx];
+    document.getElementById('galleryCounter').textContent = `${_gIdx + 1} / ${_gPhotos.length}`;
+  }
+
+  function galleryNext() { _gIdx = (_gIdx + 1) % _gPhotos.length; _showGalleryPhoto(); }
+  function galleryPrev() { _gIdx = (_gIdx - 1 + _gPhotos.length) % _gPhotos.length; _showGalleryPhoto(); }
+
+  function _galleryKey(e) {
+    if      (e.key === 'ArrowRight') galleryNext();
+    else if (e.key === 'ArrowLeft')  galleryPrev();
+    else if (e.key === 'Escape')     closeGallery();
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  let _loginCallback = null;
+
+  function getUser() {
+    try { return JSON.parse(localStorage.getItem('iprontoUser')); }
+    catch { return null; }
+  }
+
+  function _initUserUI() {
+    const user = getUser();
+    if (user) _setUserUI(user.name);
+  }
+
+  function _setUserUI(name) {
+    document.getElementById('headerLoginBtn').style.display  = 'none';
+    document.getElementById('headerUserGreeting').style.display = 'inline';
+    document.getElementById('headerUserName').textContent    = name;
+  }
+
+  function showLoginModal(callback) {
+    _loginCallback = (typeof callback === 'function') ? callback : null;
+    document.getElementById('loginOverlay').classList.add('open');
+    document.getElementById('loginError').style.display = 'none';
+    setTimeout(() => document.getElementById('loginName').focus(), 80);
+  }
+
+  function closeLoginModal() {
+    document.getElementById('loginOverlay').classList.remove('open');
+  }
+
+  async function submitLogin() {
+    const name  = document.getElementById('loginName').value.trim();
+    const email = document.getElementById('loginEmail').value.trim();
+    const errEl = document.getElementById('loginError');
+    if (!name || !email) {
+      errEl.textContent = 'Please enter your name and email.';
+      errEl.style.display = 'block';
+      return;
+    }
+    try {
+      const res  = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      localStorage.setItem('iprontoUser', JSON.stringify(data));
+      closeLoginModal();
+      _setUserUI(data.name);
+      if (_loginCallback) { _loginCallback(); _loginCallback = null; }
+    } catch (e) {
+      errEl.textContent = 'Something went wrong. Please try again.';
+      errEl.style.display = 'block';
+    }
+  }
+
+  document.getElementById('loginName').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('loginEmail').focus();
+  });
+  document.getElementById('loginEmail').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitLogin();
+  });
+
+  inputEl.focus();
+</script>
+
+</body>
+</html>

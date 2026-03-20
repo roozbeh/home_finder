@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ── Application scripts ───────────────────────────────────────────────────────
 COPY get_cookies.py .
 COPY search_and_store.py .
+COPY fetch_details.py .
 COPY status_server.py .
 COPY entrypoint.sh .
 RUN chmod +x /app/entrypoint.sh

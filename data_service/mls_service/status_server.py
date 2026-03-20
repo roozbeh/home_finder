@@ -3,8 +3,8 @@
 status_server.py
 -----------------
 Flask dashboard for the mls_app container.
-- Shows recent login / search run history from MongoDB.
-- Lets you kick off login or search jobs manually via buttons.
+- Shows recent login / search / details run history from MongoDB.
+- Lets you kick off jobs manually via buttons.
 - Streams live subprocess output so you can watch progress in real time.
 """
 
@@ -23,12 +23,12 @@ client = MongoClient(MONGO_URI)
 db     = client[MONGO_DB]
 
 # ── In-memory job state ───────────────────────────────────────────────────────
-# Tracks whether a job is currently running and buffers its last output lines.
 
 _lock = threading.Lock()
 _jobs = {
-    "login":  {"running": False, "started_at": None, "lines": []},
-    "search": {"running": False, "started_at": None, "lines": []},
+    "login":   {"running": False, "started_at": None, "lines": []},
+    "search":  {"running": False, "started_at": None, "lines": []},
+    "details": {"running": False, "started_at": None, "lines": []},
 }
 
 
@@ -52,7 +52,6 @@ def _run_job(job_type: str, cmd: list[str]):
             line = line.rstrip()
             with _lock:
                 _jobs[job_type]["lines"].append(line)
-                # Keep last 200 lines
                 if len(_jobs[job_type]["lines"]) > 200:
                     _jobs[job_type]["lines"].pop(0)
         proc.wait()
@@ -101,7 +100,7 @@ TEMPLATE = """
   <div class="row g-4">
 
     <!-- ── Run controls ──────────────────────────────────────────────────── -->
-    <div class="col-12 col-lg-6">
+    <div class="col-12 col-lg-4">
       <div class="card h-100">
         <div class="card-header fw-semibold">Login (get_cookies.py)</div>
         <div class="card-body d-flex flex-column gap-2">
@@ -117,9 +116,7 @@ TEMPLATE = """
               </button>
             </form>
             {% if jobs.login.started_at %}
-            <span class="text-muted small">
-              Started {{ jobs.login.started_at }}
-            </span>
+            <span class="text-muted small">Started {{ jobs.login.started_at }}</span>
             {% endif %}
           </div>
           <div class="log-box flex-grow-1" id="log-login">{{ jobs.login.output }}</div>
@@ -127,7 +124,7 @@ TEMPLATE = """
       </div>
     </div>
 
-    <div class="col-12 col-lg-6">
+    <div class="col-12 col-lg-4">
       <div class="card h-100">
         <div class="card-header fw-semibold">Search (search_and_store.py)</div>
         <div class="card-body d-flex flex-column gap-2">
@@ -143,12 +140,34 @@ TEMPLATE = """
               </button>
             </form>
             {% if jobs.search.started_at %}
-            <span class="text-muted small">
-              Started {{ jobs.search.started_at }}
-            </span>
+            <span class="text-muted small">Started {{ jobs.search.started_at }}</span>
             {% endif %}
           </div>
           <div class="log-box flex-grow-1" id="log-search">{{ jobs.search.output }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-4">
+      <div class="card h-100">
+        <div class="card-header fw-semibold">Details (fetch_details.py)</div>
+        <div class="card-body d-flex flex-column gap-2">
+          <div class="d-flex align-items-center gap-3">
+            <form method="post" action="/trigger/details">
+              <button class="btn btn-warning btn-sm" id="btn-details"
+                      {% if jobs.details.running %}disabled{% endif %}>
+                {% if jobs.details.running %}
+                  <span class="spinner-border me-1"></span> Running…
+                {% else %}
+                  ▶ Run Details Now
+                {% endif %}
+              </button>
+            </form>
+            {% if jobs.details.started_at %}
+            <span class="text-muted small">Started {{ jobs.details.started_at }}</span>
+            {% endif %}
+          </div>
+          <div class="log-box flex-grow-1" id="log-details">{{ jobs.details.output }}</div>
         </div>
       </div>
     </div>
@@ -241,6 +260,88 @@ TEMPLATE = """
       </div>
     </div>
 
+    <!-- ── Recent detail runs ─────────────────────────────────────────────── -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header fw-semibold">
+          Recent Detail Fetch Runs
+          <span class="badge bg-secondary float-end">last 5</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 small">
+            <thead>
+              <tr>
+                <th>Timestamp (UTC)</th>
+                <th class="text-center">Duration</th>
+                <th class="text-center">Succeeded</th>
+                <th class="text-center">Failed</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in detail_runs %}
+              <tr>
+                <td class="text-nowrap">{{ r.ts }}</td>
+                <td class="text-center">{{ r.duration_s }}s</td>
+                <td class="text-center text-success fw-semibold">{{ r.success }}</td>
+                <td class="text-center text-danger">{{ r.failed }}</td>
+                <td>
+                  {% if r.error %}
+                    <span class="err" title="{{ r.error }}">✗ {{ r.error[:60] }}</span>
+                  {% else %}
+                    <span class="ok">✓ ok</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" class="text-muted text-center py-3">No detail runs yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Recent per-listing detail log ─────────────────────────────────── -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header fw-semibold">
+          Detail Fetch Log
+          <span class="badge bg-secondary float-end">last 20 listings</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 small">
+            <thead>
+              <tr>
+                <th>Timestamp (UTC)</th>
+                <th>Listing ID</th>
+                <th class="text-center">Photos</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in detail_log %}
+              <tr>
+                <td class="text-nowrap">{{ r.ts }}</td>
+                <td>{{ r.listing_id }}</td>
+                <td class="text-center">{{ r.photo_count }}</td>
+                <td>
+                  {% if r.error %}
+                    <span class="err" title="{{ r.error }}">✗ {{ r.error[:80] }}</span>
+                  {% else %}
+                    <span class="ok">✓ ok</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-muted text-center py-3">No detail logs yet — fetch is running or hasn't started.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- ── DB summary ────────────────────────────────────────────────────── -->
     <div class="col-12">
       <div class="card">
@@ -248,7 +349,7 @@ TEMPLATE = """
         <div class="card-body">
           <div class="row text-center g-3">
             {% for stat in db_stats %}
-            <div class="col-6 col-sm-3">
+            <div class="col-6 col-sm-2">
               <div class="fs-3 fw-bold text-primary">{{ stat.count }}</div>
               <div class="text-muted small">{{ stat.label }}</div>
             </div>
@@ -262,8 +363,6 @@ TEMPLATE = """
 </div>
 
 <script>
-// Poll /api/jobs every 2s to update log boxes and button states
-// without a full page reload.
 function pad(n){ return String(n).padStart(2,'0'); }
 function tick(){
   const d = new Date();
@@ -279,8 +378,8 @@ function poll(){
   fetch('/api/jobs')
     .then(r => r.json())
     .then(data => {
-      ['login','search'].forEach(type => {
-        const job = data[type];
+      ['login','search','details'].forEach(type => {
+        const job   = data[type];
         const logEl = document.getElementById('log-' + type);
         const btnEl = document.getElementById('btn-' + type);
 
@@ -292,16 +391,18 @@ function poll(){
           btnEl.innerHTML = '<span class="spinner-border me-1"></span> Running…';
         } else {
           btnEl.disabled = false;
-          btnEl.innerHTML = type === 'login' ? '▶ Run Login Now' : '▶ Run Search Now';
+          const labels = { login:'▶ Run Login Now', search:'▶ Run Search Now', details:'▶ Run Details Now' };
+          btnEl.innerHTML = labels[type];
         }
       });
     });
 }
 
-// Initial scroll
 document.addEventListener('DOMContentLoaded', () => {
-  scrollToBottom(document.getElementById('log-login'));
-  scrollToBottom(document.getElementById('log-search'));
+  ['login','search','details'].forEach(t => {
+    const el = document.getElementById('log-' + t);
+    if (el) scrollToBottom(el);
+  });
 });
 
 setInterval(poll, 2000);
@@ -363,18 +464,48 @@ def index():
             "error":      r.get("error"),
         })
 
+    raw_detail_runs = list(db.mls_runs.find({"type": "details"}).sort("timestamp", -1).limit(5))
+    detail_runs = []
+    for r in raw_detail_runs:
+        ts = _ts(r.get("timestamp"))
+        detail_runs.append({
+            "ts":         ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "—",
+            "duration_s": r.get("duration_s", "—"),
+            "success":    r.get("success", 0),
+            "failed":     r.get("failed", 0),
+            "error":      r.get("error"),
+        })
+
+    raw_detail_log = list(db.detail_logs.find().sort("timestamp", -1).limit(20))
+    detail_log = []
+    for r in raw_detail_log:
+        ts = _ts(r.get("timestamp"))
+        detail_log.append({
+            "ts":          ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "—",
+            "listing_id":  r.get("listing_id", "—"),
+            "photo_count": r.get("photo_count", 0),
+            "error":       r.get("error"),
+        })
+
+    with_details    = db.mls_listings.count_documents({"details": {"$exists": True}})
+    pending_details = db.mls_listings.count_documents({"details": {"$exists": False}})
+
     db_stats = [
-        {"label": "Total Listings", "count": db.mls_listings.count_documents({})},
-        {"label": "Auth Tokens",    "count": db.auth_tokens.count_documents({})},
-        {"label": "Login Runs",     "count": db.mls_runs.count_documents({"type": "login"})},
-        {"label": "Search Runs",    "count": db.mls_runs.count_documents({"type": "search"})},
+        {"label": "Total Listings",   "count": db.mls_listings.count_documents({})},
+        {"label": "With Details",     "count": with_details},
+        {"label": "Pending Details",  "count": pending_details},
+        {"label": "Auth Tokens",      "count": db.auth_tokens.count_documents({})},
+        {"label": "Login Runs",       "count": db.mls_runs.count_documents({"type": "login"})},
+        {"label": "Search Runs",      "count": db.mls_runs.count_documents({"type": "search"})},
     ]
 
     return render_template_string(
         TEMPLATE,
-        jobs={t: _make_job_context(t) for t in ("login", "search")},
+        jobs={t: _make_job_context(t) for t in ("login", "search", "details")},
         logins=logins,
         searches=searches,
+        detail_runs=detail_runs,
+        detail_log=detail_log,
         db_stats=db_stats,
         now=now.strftime("%Y-%m-%d %H:%M:%S UTC"),
     )
@@ -382,7 +513,7 @@ def index():
 
 @app.route("/trigger/<job_type>", methods=["POST"])
 def trigger(job_type):
-    if job_type not in ("login", "search"):
+    if job_type not in ("login", "search", "details"):
         return "Not found", 404
 
     with _lock:
@@ -390,8 +521,9 @@ def trigger(job_type):
             return redirect(url_for("index"))
 
     cmd = {
-        "login":  ["python", "/app/get_cookies.py"],
-        "search": ["python", "/app/search_and_store.py"],
+        "login":   ["python", "/app/get_cookies.py"],
+        "search":  ["python", "/app/search_and_store.py"],
+        "details": ["python", "/app/fetch_details.py"],
     }[job_type]
 
     thread = threading.Thread(target=_run_job, args=(job_type, cmd), daemon=True)
