@@ -57,6 +57,8 @@ services:
       nofile:
         soft: 65535
         hard: 65535
+    security_opt:
+      - seccomp=unconfined
 
 volumes:
   # mongo_data:   # uncomment when re-enabling local mongo
