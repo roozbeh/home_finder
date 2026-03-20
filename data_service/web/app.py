@@ -20,7 +20,7 @@ CALENDLY_URL  = "https://calendly.com/ruzbeh-o0w7/new-meeting"
 PAGE_SIZE     = 10
 
 app    = Flask(__name__)
-mongo  = MongoClient(MONGO_URI)
+mongo  = MongoClient(MONGO_URI, connect=False)
 db     = mongo[MONGO_DB]
 ai     = anthropic.Anthropic(api_key=ANTHROPIC_KEY) if ANTHROPIC_KEY else None
 
