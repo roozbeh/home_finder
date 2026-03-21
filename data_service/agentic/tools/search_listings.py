@@ -1,5 +1,9 @@
 """search_listings tool — queries mls_listings in MongoDB."""
 
+import re
+import logging
+log = logging.getLogger(__name__)
+
 
 def search_listings(args: dict, db):
     """
@@ -59,14 +63,35 @@ def search_listings(args: dict, db):
             [],
         )
 
-    # Serialize datetimes; expose TINYPROPPHOTO_ONELINE as thumbphoto
+    # Serialize datetimes; resolve thumbphoto from available fields
     listings = []
     for r in results:
         for k, v in list(r.items()):
             if hasattr(v, "strftime"):
                 r[k] = v.strftime("%Y-%m-%d")
-        if not r.get("thumbphoto") and r.get("TINYPROPPHOTO_ONELINE"):
-            r["thumbphoto"] = r["TINYPROPPHOTO_ONELINE"]
+
+        # Resolve thumbnail URL — prefer photos[0], then TINYPROPPHOTO_ONELINE
+        if not r.get("thumbphoto"):
+            photos = r.get("photos", [])
+            tiny   = r.get("TINYPROPPHOTO_ONELINE", "")
+            if photos:
+                r["thumbphoto"] = photos[0]
+            elif tiny:
+                # TINYPROPPHOTO_ONELINE may be a plain URL or an HTML <img> tag
+                if tiny.strip().startswith("<"):
+                    m = re.search(r'src=["\']([^"\']+)["\']', tiny)
+                    r["thumbphoto"] = m.group(1) if m else ""
+                else:
+                    r["thumbphoto"] = tiny
+
+        # Log the first listing so we can see what fields look like
+        if not listings:
+            log.info("[search_listings] sample thumb fields — "
+                     "thumbphoto=%r  TINYPROPPHOTO_ONELINE=%r  photos_count=%d",
+                     r.get("thumbphoto", "")[:80] if r.get("thumbphoto") else None,
+                     r.get("TINYPROPPHOTO_ONELINE", "")[:80] if r.get("TINYPROPPHOTO_ONELINE") else None,
+                     len(r.get("photos", [])))
+
         r.pop("TINYPROPPHOTO_ONELINE", None)
         listings.append(r)
 
