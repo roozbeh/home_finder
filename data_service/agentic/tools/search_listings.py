@@ -45,8 +45,8 @@ def search_listings(args: dict, db):
         "_id": 0, "_history": 0,
         "SOURCE_MLS_CIRCLE": 0,
         "TOOLS": 0, "LPHOTOS": 0,
-        "details": 0,            # large nested blob — not needed in chat cards
         "details_fetched": 0,
+        # details is fetched but immediately popped below — only Baths/Beds are extracted
     }
 
     results = list(
@@ -92,6 +92,21 @@ def search_listings(args: dict, db):
                      r.get("TINYPROPPHOTO_ONELINE", "")[:80] if r.get("TINYPROPPHOTO_ONELINE") else None,
                      len(r.get("photos", [])))
 
+        # details is the primary source; fall back to top-level fields if details absent
+        details = r.pop("details", None) or {}
+        baths = details.get("Baths") if details else None
+        if baths is not None:
+            r["BATHS_DISPLAY"] = str(baths)
+        elif not r.get("BATHS_DISPLAY") and not r.get("BATHROOMS_FULL"):
+            pass  # no baths data available anywhere
+        beds = details.get("Beds") if details else None
+        if beds is not None:
+            try:
+                r["BEDROOMS_TOTAL"] = int(beds)
+            except (ValueError, TypeError):
+                pass
+        # if details had no Beds, BEDROOMS_TOTAL from the top-level field remains as-is
+
         r.pop("TINYPROPPHOTO_ONELINE", None)
         listings.append(r)
 
@@ -99,7 +114,7 @@ def search_listings(args: dict, db):
     for listing in listings:
         price_str = f"${listing.get('LIST_PRICE', 0):,.0f}" if listing.get("LIST_PRICE") else "N/A"
         beds_val  = listing.get("BEDROOMS_TOTAL", "?")
-        baths_val = listing.get("BATHS_DISPLAY") or listing.get("BATHROOMS_FULL", "?")
+        baths_val = listing.get("BATHS_DISPLAY") or listing.get("BATHROOMS_FULL") or "?"
         sqft_val  = f"{listing.get('SQFT', 0):,.0f} sqft" if listing.get("SQFT") else ""
         addr      = listing.get("STREET_ADDRESS", "Unknown")
         city      = listing.get("CITY", "").title()
