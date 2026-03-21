@@ -39,7 +39,7 @@ def search_listings(args: dict, db):
     limit = min(int(args.get("limit", 5)), 8)
     skip_fields = {
         "_id": 0, "_history": 0,
-        "SOURCE_MLS_CIRCLE": 0, "TINYPROPPHOTO_ONELINE": 0,
+        "SOURCE_MLS_CIRCLE": 0,
         "TOOLS": 0, "LPHOTOS": 0,
         "details": 0,            # large nested blob — not needed in chat cards
         "details_fetched": 0,
@@ -59,12 +59,15 @@ def search_listings(args: dict, db):
             [],
         )
 
-    # Serialize datetimes to strings for JSON
+    # Serialize datetimes; expose TINYPROPPHOTO_ONELINE as thumbphoto
     listings = []
     for r in results:
         for k, v in list(r.items()):
             if hasattr(v, "strftime"):
                 r[k] = v.strftime("%Y-%m-%d")
+        if not r.get("thumbphoto") and r.get("TINYPROPPHOTO_ONELINE"):
+            r["thumbphoto"] = r["TINYPROPPHOTO_ONELINE"]
+        r.pop("TINYPROPPHOTO_ONELINE", None)
         listings.append(r)
 
     summary = f"Found {len(listings)} listing(s):\n"

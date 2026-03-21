@@ -1,6 +1,7 @@
 """Core agentic loop for the Maya home-finder assistant."""
 
 import logging
+import time
 from agentic.prompts import SYSTEM_PROMPT, TOOLS
 from agentic.tools.executor import exec_tool
 
@@ -32,33 +33,21 @@ def _sanitize_messages(messages: list[dict]) -> list[dict]:
 
 
 def run_agent(messages: list[dict], session_id: str, db, ai_client) -> dict:
-    """
-    Run the agentic loop.
+    t_request_start = time.time()
 
-    Args:
-        messages:   Conversation history in Anthropic format [{role, content}].
-                    May start with an assistant message — it will be stripped.
-        session_id: Client session UUID (passed to tools that need it).
-        db:         PyMongo database handle.
-        ai_client:  anthropic.Anthropic instance.
-
-    Returns:
-        dict with keys:
-            "message"  — assistant reply text (str)
-            "listings" — list of listing dicts (may be empty)
-        or:
-            "error"    — error message string
-    """
     msgs = _sanitize_messages(list(messages))
     if not msgs:
         return {"error": "No user messages to process."}
 
-    log.info("[agent] session=%s  starting with %d message(s)", session_id, len(msgs))
+    log.info("[agent] ── NEW REQUEST ── session=%s  history_messages=%d",
+             session_id, len(msgs))
 
     all_listings: list = []
 
     for iteration in range(MAX_ITERATIONS):
-        log.info("[agent] iteration=%d  calling LLM (messages in context: %d)", iteration + 1, len(msgs))
+        t_llm_start = time.time()
+        log.info("[agent] [iter %d] → calling LLM  context_messages=%d",
+                 iteration + 1, len(msgs))
 
         try:
             resp = ai_client.messages.create(
@@ -69,29 +58,45 @@ def run_agent(messages: list[dict], session_id: str, db, ai_client) -> dict:
                 messages=msgs,
             )
         except Exception as e:
-            log.error("[agent] LLM call failed: %s", e)
+            log.error("[agent] [iter %d] ✗ LLM call failed after %.1fs: %s",
+                      iteration + 1, time.time() - t_llm_start, e)
             return {"error": f"LLM error: {e}"}
 
-        log.info("[agent] LLM stop_reason=%s", resp.stop_reason)
+        t_llm_elapsed = time.time() - t_llm_start
+        log.info("[agent] [iter %d] ← LLM responded in %.2fs  stop_reason=%s  "
+                 "input_tokens=%s  output_tokens=%s",
+                 iteration + 1, t_llm_elapsed,
+                 resp.stop_reason,
+                 getattr(resp.usage, "input_tokens", "?"),
+                 getattr(resp.usage, "output_tokens", "?"))
 
         if resp.stop_reason == "end_turn":
             text = next((b.text for b in resp.content if b.type == "text"), "")
-            log.info("[agent] end_turn  reply_length=%d  listings=%d", len(text), len(all_listings))
+            t_total = time.time() - t_request_start
+            log.info("[agent] ✓ DONE  total=%.2fs  reply_chars=%d  listings=%d",
+                     t_total, len(text), len(all_listings))
             return {"message": text, "listings": all_listings}
 
         if resp.stop_reason == "tool_use":
             tool_results = []
             for b in resp.content:
                 if b.type == "tool_use":
-                    log.info("[agent] tool_call  name=%s  args=%s", b.name, b.input)
+                    t_tool_start = time.time()
+                    log.info("[agent] [iter %d] ⚙ tool_call  name=%s  args=%s",
+                             iteration + 1, b.name, b.input)
                     try:
                         result_text, listings = exec_tool(b.name, b.input, db, session_id)
                     except Exception as e:
-                        log.error("[agent] tool %s failed: %s", b.name, e)
+                        log.error("[agent] [iter %d] ✗ tool %s failed after %.2fs: %s",
+                                  iteration + 1, b.name, time.time() - t_tool_start, e)
                         result_text, listings = f"Tool error: {e}", None
 
-                    log.info("[agent] tool_result  name=%s  result_length=%d  listings=%s",
-                             b.name, len(result_text), len(listings) if listings is not None else "n/a")
+                    t_tool_elapsed = time.time() - t_tool_start
+                    log.info("[agent] [iter %d] ✓ tool_result  name=%s  elapsed=%.2fs  "
+                             "result_chars=%d  listings=%s",
+                             iteration + 1, b.name, t_tool_elapsed,
+                             len(result_text),
+                             len(listings) if listings is not None else "n/a")
 
                     if listings is not None:
                         all_listings = listings
@@ -107,7 +112,10 @@ def run_agent(messages: list[dict], session_id: str, db, ai_client) -> dict:
             ]
             continue
 
-        log.warning("[agent] unexpected stop_reason=%s — aborting", resp.stop_reason)
+        log.warning("[agent] [iter %d] unexpected stop_reason=%s — aborting",
+                    iteration + 1, resp.stop_reason)
         break
 
+    t_total = time.time() - t_request_start
+    log.error("[agent] ✗ FAILED  total=%.2fs  max_iterations=%d reached", t_total, MAX_ITERATIONS)
     return {"error": "Could not generate a response. Please try again."}
