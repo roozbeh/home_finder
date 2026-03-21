@@ -14,4 +14,4 @@ COPY agentic/ ./agentic/
 EXPOSE 5000
 
 # Use gunicorn for a proper production-grade server
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "60", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "--worker-class", "gthread", "--threads", "4", "app:app"]

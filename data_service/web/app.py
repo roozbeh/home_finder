@@ -6,11 +6,11 @@ import uuid
 import time
 import logging
 from datetime import datetime, timezone
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from pymongo import MongoClient
 import anthropic
 
-from agentic.agent import run_agent
+from agentic.agent import run_agent, run_agent_streaming
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -143,6 +143,62 @@ def api_chat():
         "listings":   result["listings"],
         "session_id": session_id,
     })
+
+
+@app.route("/api/chat/stream", methods=["POST"])
+def api_chat_stream():
+    if not ai:
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured on server"}), 500
+
+    data       = request.get_json(force=True)
+    messages   = data.get("messages", [])
+    session_id = data.get("session_id", str(uuid.uuid4()))
+    user_id    = data.get("user_id", "")
+
+    if not messages:
+        return jsonify({"error": "No messages provided"}), 400
+
+    logging.info("[api/chat/stream] session=%s  messages=%d", session_id, len(messages))
+
+    def generate():
+        full_text = ""
+        listings  = []
+        import json as _json
+
+        for chunk in run_agent_streaming(messages, session_id, db, ai):
+            yield chunk
+            # Parse to track final state for session persistence
+            try:
+                obj = _json.loads(chunk[len("data: "):].strip())
+                if obj.get("type") == "done":
+                    full_text = obj.get("full_text", "")
+                    listings  = obj.get("listings", [])
+            except Exception:
+                pass
+
+        # Persist the conversation after streaming completes
+        if full_text:
+            assistant_entry = {"role": "assistant", "content": full_text, "listings": listings}
+            full_messages   = list(messages) + [assistant_entry]
+            first_user_text = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
+            title           = (first_user_text[:60] + "…") if len(first_user_text) > 60 else first_user_text
+            now             = datetime.now(timezone.utc)
+            db.chat_sessions.update_one(
+                {"session_id": session_id},
+                {
+                    "$set":         {"messages": full_messages, "user_id": user_id, "updated_at": now},
+                    "$setOnInsert": {"title": title, "created_at": now},
+                },
+                upsert=True,
+            )
+
+    resp = Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+    )
+    resp.headers["Cache-Control"]    = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
 
 
 @app.route("/api/sessions", methods=["GET"])

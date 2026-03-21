@@ -227,6 +227,17 @@
       40% { transform: translateY(-6px); }
     }
 
+    /* ── Streaming bubble typing dots ── */
+    .typing-dots { display: inline-flex; gap: 5px; align-items: center; }
+    .typing-dots span {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #9ba3b8;
+      animation: bounce 1.2s infinite;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: .2s; }
+    .typing-dots span:nth-child(3) { animation-delay: .4s; }
+
     /* ── Input area ── */
     .chat-input-area {
       flex-shrink: 0;
@@ -473,31 +484,77 @@
     appendMessage("user", text, []);
     scrollToBottom();
 
-    const typingEl = appendTyping();
+    // Create the bot bubble immediately — we'll fill it as chunks arrive
+    const { row: botRow, inner: botInner, bubble: botBubble } = appendStreamingBubble();
     scrollToBottom();
 
+    let fullText = "";
+
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/chat/stream", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ messages: history, session_id: SESSION_ID }),
+        body:    JSON.stringify({
+          messages:   history,
+          session_id: SESSION_ID,
+          user_id:    currentUserId || "",
+        }),
       });
-      const data = await res.json();
-      typingEl.remove();
 
-      if (data.error) {
-        showError(data.error);
-        history.pop();
-      } else {
-        history.push({ role: "assistant", content: data.message });
-        appendMessage("bot", data.message, data.listings || []);
-        scrollToBottom();
-        if (data.message.includes("OPEN_CALENDLY")) {
-          setTimeout(() => window.open(CALENDLY_URL, "_blank"), 400);
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE lines: "data: {...}\n\n"
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop(); // keep incomplete tail
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let obj;
+          try { obj = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (obj.type === "status") {
+            // Show italic status inside the bubble while tools run
+            botInner.innerHTML = `<em style="color:#888">${obj.text}</em>`;
+            scrollToBottom();
+
+          } else if (obj.type === "text") {
+            // Stream text chunks — clear status on first real text
+            if (botInner.querySelector("em")) botInner.textContent = "";
+            fullText += obj.text;
+            botInner.textContent = fullText.replace(/OPEN_CALENDLY\S*/g, "").trim();
+            scrollToBottom();
+
+          } else if (obj.type === "done") {
+            fullText = obj.full_text || fullText;
+            botInner.textContent = fullText.replace(/OPEN_CALENDLY\S*/g, "").trim();
+            const listings = obj.listings || [];
+            if (listings.length > 0) {
+              botBubble.appendChild(buildListingsRow(listings));
+            }
+            history.push({ role: "assistant", content: fullText });
+            scrollToBottom();
+            if (fullText.includes("OPEN_CALENDLY")) {
+              setTimeout(() => window.open(CALENDLY_URL, "_blank"), 400);
+            }
+
+          } else if (obj.type === "error") {
+            botRow.remove();
+            showError(obj.text);
+            history.pop();
+          }
         }
       }
     } catch (err) {
-      typingEl.remove();
+      botRow.remove();
       showError("Network error. Please check your connection and try again.");
       history.pop();
     } finally {
@@ -531,6 +588,30 @@
 
     messagesEl.appendChild(row);
     return row;
+  }
+
+  // Creates an empty bot bubble and returns handles to fill it during streaming
+  function appendStreamingBubble() {
+    const row = document.createElement("div");
+    row.className = "msg-row bot";
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar bot";
+    avatar.textContent = "🏡";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    const inner = document.createElement("div");
+    inner.className = "bubble-inner";
+    // Show the typing dots until first chunk arrives
+    inner.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+    bubble.appendChild(inner);
+
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+    messagesEl.appendChild(row);
+    return { row, inner, bubble };
   }
 
   function appendTyping() {
