@@ -106,6 +106,7 @@ def api_chat():
     data       = request.get_json(force=True)
     messages   = data.get("messages", [])
     session_id = data.get("session_id", str(uuid.uuid4()))
+    user_id    = data.get("user_id", "")
 
     if not messages:
         return jsonify({"error": "No messages provided"}), 400
@@ -115,11 +116,61 @@ def api_chat():
     if "error" in result:
         return jsonify({"error": result["error"], "session_id": session_id}), 500
 
+    # Persist conversation to chat_sessions
+    assistant_entry = {"role": "assistant", "content": result["message"], "listings": result["listings"]}
+    full_messages   = list(messages) + [assistant_entry]
+    first_user_text = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
+    title           = (first_user_text[:60] + "…") if len(first_user_text) > 60 else first_user_text
+    now             = datetime.now(timezone.utc)
+    db.chat_sessions.update_one(
+        {"session_id": session_id},
+        {
+            "$set":         {"messages": full_messages, "user_id": user_id, "updated_at": now},
+            "$setOnInsert": {"title": title, "created_at": now},
+        },
+        upsert=True,
+    )
+
     return jsonify({
         "message":    result["message"],
         "listings":   result["listings"],
         "session_id": session_id,
     })
+
+
+@app.route("/api/sessions", methods=["GET"])
+def api_sessions():
+    user_id = request.args.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    sessions = list(
+        db.chat_sessions
+          .find({"user_id": user_id}, {"_id": 0, "messages": 0})
+          .sort("updated_at", -1)
+          .limit(50)
+    )
+    for s in sessions:
+        for k in ("created_at", "updated_at"):
+            if k in s and hasattr(s[k], "isoformat"):
+                s[k] = s[k].isoformat()
+    return jsonify(sessions)
+
+
+@app.route("/api/sessions/<session_id>", methods=["GET"])
+def api_session_get(session_id):
+    session = db.chat_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    if not session:
+        return jsonify({"error": "not found"}), 404
+    for k in ("created_at", "updated_at"):
+        if k in session and hasattr(session[k], "isoformat"):
+            session[k] = session[k].isoformat()
+    return jsonify(session)
+
+
+@app.route("/api/sessions/<session_id>", methods=["DELETE"])
+def api_session_delete(session_id):
+    db.chat_sessions.delete_one({"session_id": session_id})
+    return jsonify({"ok": True})
 
 
 @app.route("/api/feedback", methods=["POST"])
