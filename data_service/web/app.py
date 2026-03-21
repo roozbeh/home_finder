@@ -3,6 +3,7 @@
 
 import os
 import uuid
+import time
 import logging
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, jsonify
@@ -103,15 +104,21 @@ def api_chat():
     if not ai:
         return jsonify({"error": "ANTHROPIC_API_KEY not configured on server"}), 500
 
+    t0         = time.time()
     data       = request.get_json(force=True)
     messages   = data.get("messages", [])
     session_id = data.get("session_id", str(uuid.uuid4()))
     user_id    = data.get("user_id", "")
 
+    logging.info("[api/chat] received  session=%s  messages=%d  user_id=%s",
+                 session_id, len(messages), user_id or "anon")
+
     if not messages:
         return jsonify({"error": "No messages provided"}), 400
 
     result = run_agent(messages, session_id, db, ai)
+    logging.info("[api/chat] completed  session=%s  elapsed=%.2fs  error=%s",
+                 session_id, time.time() - t0, "error" in result)
 
     if "error" in result:
         return jsonify({"error": result["error"], "session_id": session_id}), 500
