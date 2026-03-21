@@ -10,6 +10,8 @@ struct Listing: Codable, Identifiable {
     let bathsDisplay: String?
     let sqft: Double?
     let mlsStatus: String?
+    let thumbphoto: String?
+    let photos: [String]
 
     // Identifiable — fall back to a random UUID if LISTING_ID is missing
     var id: String { listingId ?? UUID().uuidString }
@@ -24,6 +26,23 @@ struct Listing: Codable, Identifiable {
         case bathsDisplay  = "BATHS_DISPLAY"
         case sqft          = "SQFT"
         case mlsStatus     = "MLS_STATUS"
+        case thumbphoto    = "thumbphoto"
+        case photos        = "photos"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c          = try decoder.container(keyedBy: CodingKeys.self)
+        listingId      = try c.decodeIfPresent(String.self,  forKey: .listingId)
+        streetAddress  = try c.decodeIfPresent(String.self,  forKey: .streetAddress)
+        city           = try c.decodeIfPresent(String.self,  forKey: .city)
+        listPrice      = try c.decodeIfPresent(Double.self,  forKey: .listPrice)
+        bedroomsTotal  = try c.decodeIfPresent(Int.self,     forKey: .bedroomsTotal)
+        bathroomsFull  = try c.decodeIfPresent(Int.self,     forKey: .bathroomsFull)
+        bathsDisplay   = try c.decodeIfPresent(String.self,  forKey: .bathsDisplay)
+        sqft           = try c.decodeIfPresent(Double.self,  forKey: .sqft)
+        mlsStatus      = try c.decodeIfPresent(String.self,  forKey: .mlsStatus)
+        thumbphoto     = try c.decodeIfPresent(String.self,  forKey: .thumbphoto)
+        photos         = (try? c.decode([String].self, forKey: .photos)) ?? []
     }
 
     var formattedPrice: String {

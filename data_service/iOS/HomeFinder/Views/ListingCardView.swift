@@ -6,6 +6,13 @@ struct ListingCardView: View {
     let listing: Listing
     @EnvironmentObject var vm: ChatViewModel
     @State private var vote: FeedbackVote?
+    @State private var showingGallery = false
+
+    private var galleryPhotos: [String] {
+        listing.photos.isEmpty
+            ? ([listing.thumbphoto].compactMap { $0 })
+            : listing.photos
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -54,27 +61,68 @@ struct ListingCardView: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 2)
+        .sheet(isPresented: $showingGallery) {
+            let addr = [listing.streetAddress, listing.formattedCity]
+                .compactMap { $0 }.joined(separator: ", ")
+            PhotoGalleryView(photos: galleryPhotos, title: addr)
+        }
     }
 
     // MARK: - Subviews
 
     private var photoHeader: some View {
         ZStack(alignment: .topTrailing) {
+            // Photo or gradient placeholder
+            if let thumb = listing.thumbphoto, let url = URL(string: thumb) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        gradientPlaceholder
+                    }
+                }
+                .clipped()
+            } else {
+                gradientPlaceholder
+            }
+
+            // Overlays: status badge top-right, photo count bottom-right
+            VStack {
+                if let status = listing.mlsStatus {
+                    statusBadge(status).padding(8)
+                }
+                Spacer()
+                if !galleryPhotos.isEmpty {
+                    Label("\(galleryPhotos.count)", systemImage: "photo.on.rectangle")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.5))
+                        .clipShape(Capsule())
+                        .padding(8)
+                }
+            }
+        }
+        .frame(height: 140)
+        .clipped()
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !galleryPhotos.isEmpty { showingGallery = true }
+        }
+    }
+
+    private var gradientPlaceholder: some View {
+        ZStack {
             LinearGradient(
                 colors: [Color(red: 0.1, green: 0.29, blue: 0.54), brandBlue],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                startPoint: .topLeading, endPoint: .bottomTrailing
             )
             Image(systemName: "house.fill")
                 .font(.system(size: 40))
                 .foregroundColor(.white.opacity(0.25))
-
-            if let status = listing.mlsStatus {
-                statusBadge(status)
-                    .padding(8)
-            }
         }
-        .frame(height: 120)
     }
 
     private func statusBadge(_ status: String) -> some View {

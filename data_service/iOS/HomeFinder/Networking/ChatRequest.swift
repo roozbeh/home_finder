@@ -6,4 +6,5 @@ struct APIMessage: Codable {
 struct ChatRequest: Encodable {
     let messages: [APIMessage]
     let session_id: String
+    let user_id: String
 }

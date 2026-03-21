@@ -6,8 +6,13 @@ struct HomeFinderApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ChatView()
-                .environmentObject(vm)
+            if vm.currentUser != nil {
+                ChatView()
+                    .environmentObject(vm)
+            } else {
+                LoginView()
+                    .environmentObject(vm)
+            }
         }
     }
 }
