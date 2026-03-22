@@ -13,7 +13,7 @@ ssh ubuntu@ipronto.net << 'EOF'
   docker-compose down
 
   echo "==> Building and starting web container..."
-  docker compose up --build -d web
+  docker-compose up --build -d web
 EOF
 
 echo "==> Deploy complete."

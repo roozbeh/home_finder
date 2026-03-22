@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>roozbeh.realtor — AI-Powered Bay Area Home Finder</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #092a56; --brand-light: #1a4a8a; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1a1a2e; }
+
+    /* Hero */
+    .hero {
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
+      color: #fff;
+      padding: 80px 24px 72px;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(255,255,255,.15);
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 20px;
+      padding: 4px 16px;
+      font-size: .82rem;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 18px;
+    }
+    .hero p {
+      font-size: clamp(1rem, 2.5vw, 1.2rem);
+      opacity: .85;
+      max-width: 560px;
+      margin: 0 auto 32px;
+      line-height: 1.6;
+    }
+    .hero-cta {
+      display: inline-block;
+      background: #fff;
+      color: var(--brand);
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 14px 36px;
+      border-radius: 50px;
+      text-decoration: none;
+      transition: transform .15s, box-shadow .15s;
+      box-shadow: 0 4px 20px rgba(0,0,0,.2);
+    }
+    .hero-cta:hover { transform: translateY(-2px); box-shadow: 0 6px 28px rgba(0,0,0,.25); color: var(--brand); }
+
+    /* App store badges */
+    .store-badges { margin-top: 24px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .store-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+      border-radius: 10px; padding: 8px 18px; color: #fff; text-decoration: none;
+      font-size: .88rem; font-weight: 500;
+    }
+    .store-badge:hover { background: rgba(255,255,255,.2); color: #fff; }
+
+    /* Features */
+    .features { padding: 72px 24px; background: #f7f9fc; }
+    .features h2 { font-size: 2rem; font-weight: 800; color: var(--brand); text-align: center; margin-bottom: 8px; }
+    .features .subtitle { text-align: center; color: #666; margin-bottom: 48px; font-size: 1.05rem; }
+    .feature-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 32px 28px;
+      height: 100%;
+      box-shadow: 0 2px 12px rgba(0,0,0,.06);
+      border: 1px solid #eef0f6;
+    }
+    .feature-icon {
+      width: 52px; height: 52px;
+      background: linear-gradient(135deg, var(--brand), var(--brand-light));
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 18px;
+      font-size: 1.5rem;
+    }
+    .feature-card h5 { font-weight: 700; font-size: 1.05rem; margin-bottom: 8px; color: var(--brand); }
+    .feature-card p { color: #555; font-size: .93rem; line-height: 1.6; margin: 0; }
+
+    /* How it works */
+    .how { padding: 72px 24px; background: #fff; }
+    .how h2 { font-size: 2rem; font-weight: 800; color: var(--brand); text-align: center; margin-bottom: 48px; }
+    .step { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 36px; }
+    .step-num {
+      flex-shrink: 0;
+      width: 42px; height: 42px;
+      background: var(--brand);
+      color: #fff;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 1rem;
+    }
+    .step h5 { font-weight: 700; margin-bottom: 4px; color: var(--brand); }
+    .step p { color: #555; font-size: .93rem; line-height: 1.6; margin: 0; }
+
+    /* Agent */
+    .agent-section {
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
+      padding: 64px 24px;
+      text-align: center;
+      color: #fff;
+    }
+    .agent-section h2 { font-size: 1.8rem; font-weight: 800; margin-bottom: 12px; }
+    .agent-section p { opacity: .85; max-width: 500px; margin: 0 auto 24px; line-height: 1.6; }
+    .dre-badge {
+      display: inline-block;
+      background: rgba(255,255,255,.15);
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 20px;
+      padding: 6px 20px;
+      font-size: .88rem;
+      margin-bottom: 24px;
+    }
+
+    /* Footer */
+    footer {
+      background: #0a0f1e;
+      color: rgba(255,255,255,.5);
+      text-align: center;
+      padding: 24px;
+      font-size: .85rem;
+    }
+    footer a { color: rgba(255,255,255,.6); text-decoration: none; }
+    footer a:hover { color: #fff; }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav style="background:var(--brand);padding:12px 24px;display:flex;align-items:center;gap:24px;">
+    <a href="/" style="color:#fff;font-weight:700;font-size:1rem;text-decoration:none;">roozbeh.realtor</a>
+    <div style="flex:1;display:flex;gap:20px;justify-content:flex-end;">
+      <a href="/" style="color:rgba(255,255,255,.7);font-size:.9rem;text-decoration:none;">Chat</a>
+      <a href="/search" style="color:rgba(255,255,255,.7);font-size:.9rem;text-decoration:none;">Browse</a>
+      <a href="/about" style="color:#fff;font-size:.9rem;font-weight:600;text-decoration:none;">About</a>
+      <a href="/support" style="color:rgba(255,255,255,.7);font-size:.9rem;text-decoration:none;">Support</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">Bay Area Real Estate · Powered by AI</div>
+    <h1>Find Your Bay Area<br>Home, Effortlessly</h1>
+    <p>Chat with Maya, your AI real estate assistant. Tell her what you're looking for — she searches live MLS listings and finds your best matches instantly.</p>
+    <a href="/" class="hero-cta">Start Your Search →</a>
+    <div class="store-badges">
+      <span class="store-badge">📱 iOS App Available</span>
+      <span class="store-badge">💻 Web App</span>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="features">
+    <div class="container">
+      <h2>Why roozbeh.realtor?</h2>
+      <p class="subtitle">A smarter way to search for homes in the San Francisco Bay Area</p>
+      <div class="row g-4">
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="feature-card">
+            <div class="feature-icon">💬</div>
+            <h5>Conversational Search</h5>
+            <p>No filters, no forms. Just tell Maya what you want in plain English — budget, location, bedrooms, school district — and she handles the rest.</p>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="feature-card">
+            <div class="feature-icon">🏠</div>
+            <h5>Live MLS Listings</h5>
+            <p>Data pulled directly from the MLS, updated daily. No stale aggregator data — you see the same listings agents see.</p>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="feature-card">
+            <div class="feature-icon">🎓</div>
+            <h5>School Insights</h5>
+            <p>Instantly look up school district ratings for any Bay Area city. Critical information for families, surfaced automatically.</p>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="feature-card">
+            <div class="feature-icon">📸</div>
+            <h5>Photos & Details</h5>
+            <p>Browse property photos, pricing history, square footage, and full listing details — all within the conversation.</p>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="feature-card">
+            <div class="feature-icon">📅</div>
+            <h5>Instant Showing Booking</h5>
+            <p>Interested in a property? Book a showing directly with a licensed agent in one tap — no phone calls, no waiting.</p>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="feature-card">
+            <div class="feature-icon">🔔</div>
+            <h5>Save Your Search</h5>
+            <p>Sign in to save your conversation history and preferences. Pick up right where you left off across sessions and devices.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="how">
+    <div class="container">
+      <h2>How It Works</h2>
+      <div class="row justify-content-center">
+        <div class="col-12 col-md-8 col-lg-6">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div>
+              <h5>Tell Maya what you're looking for</h5>
+              <p>Start a conversation. Share your budget, preferred cities, number of bedrooms, and any must-haves like a yard or good schools.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div>
+              <h5>Maya searches live MLS listings</h5>
+              <p>She queries the MLS in real time, applying your criteria intelligently — even stretching the search a little to make sure you don't miss a great match.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div>
+              <h5>Review and give feedback</h5>
+              <p>Browse listing cards with photos and details. Thumbs up what you like, thumbs down what doesn't fit — Maya refines the next search based on your feedback.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div>
+              <h5>Book a showing</h5>
+              <p>Found something you love? Book a showing with Roozbeh directly through the app. A licensed agent will take it from there.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Agent -->
+  <section class="agent-section">
+    <div class="container">
+      <h2>Your Local Expert</h2>
+      <div class="dre-badge">DRE# 02225608</div>
+      <p>Roozbeh Zabihollahi is a licensed California real estate agent specializing in the San Francisco Bay Area peninsula and South Bay. roozbeh.realtor combines his local expertise with AI to give you the best of both worlds.</p>
+      <a href="mailto:info@roozbeh.realtor" style="color:#fff;font-weight:600;text-decoration:underline;">info@roozbeh.realtor</a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p>© 2026 roozbeh.realtor · Roozbeh Zabihollahi · DRE# 02225608 ·
+      <a href="/support">Support</a> ·
+      <a href="/">Start Searching</a>
+    </p>
+  </footer>
+
+</body>
+</html>
