@@ -43,6 +43,11 @@ def support():
     return render_template("support.html")
 
 
+@app.route("/privacy_policy")
+def privacy_policy():
+    return render_template("privacy_policy.html")
+
+
 @app.route("/search")
 def search():
     def _int(val, default=None):
