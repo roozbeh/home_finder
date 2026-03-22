@@ -266,24 +266,46 @@ def api_feedback():
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_auth_login():
-    data  = request.get_json(force=True)
-    name  = (data.get("name") or "").strip()
-    email = (data.get("email") or "").strip().lower()
-    if not name or not email:
+    data          = request.get_json(force=True)
+    name          = (data.get("name") or "").strip()
+    email         = (data.get("email") or "").strip().lower()
+    apple_user_id = (data.get("apple_user_id") or "").strip()
+
+    # Look up by apple_user_id first (stable across reinstalls),
+    # then fall back to email lookup.
+    user = None
+    if apple_user_id:
+        user = db.users.find_one({"apple_user_id": apple_user_id})
+    if user is None and email:
+        user = db.users.find_one({"email": email})
+
+    # Require at least apple_user_id or email to identify/create the user
+    if user is None and not email and not apple_user_id:
         return jsonify({"error": "name and email are required"}), 400
 
-    user = db.users.find_one({"email": email})
     if user is None:
         user_id = str(uuid.uuid4())
         db.users.insert_one({
-            "user_id":    user_id,
-            "name":       name,
-            "email":      email,
-            "created_at": datetime.now(timezone.utc),
+            "user_id":       user_id,
+            "name":          name,
+            "email":         email,
+            "apple_user_id": apple_user_id,
+            "created_at":    datetime.now(timezone.utc),
         })
     else:
         user_id = user["user_id"]
-        db.users.update_one({"email": email}, {"$set": {"name": name}})
+        # Backfill any missing fields and update name
+        update = {"name": name or user.get("name", "")}
+        if apple_user_id and not user.get("apple_user_id"):
+            update["apple_user_id"] = apple_user_id
+        if email and not user.get("email"):
+            update["email"] = email
+        db.users.update_one({"user_id": user_id}, {"$set": update})
+        # Use stored values for anything the client didn't send
+        if not email:
+            email = user.get("email", "")
+        if not name:
+            name = user.get("name", "")
 
     return jsonify({"user_id": user_id, "name": name, "email": email})
 
