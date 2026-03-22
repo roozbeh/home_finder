@@ -1,8 +1,10 @@
 import SwiftUI
+import UIKit
 
 private let brandBlue   = Color(red: 0.035, green: 0.165, blue: 0.337)
-private let bubbleBot   = Color(red: 0.94, green: 0.957, blue: 1.0)
-private let bubbleBotFG = Color(red: 0.1, green: 0.1, blue: 0.17)
+// Adaptive colors — automatically flip for dark mode
+private let bubbleBot   = Color(.secondarySystemBackground)
+private let bubbleBotFG = Color(.label)
 
 struct MessageBubbleView: View {
     let message: ChatMessage

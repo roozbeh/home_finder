@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private let brandBlue = Color(red: 0.035, green: 0.165, blue: 0.337)
 
@@ -25,6 +26,7 @@ struct ChatView: View {
                         }
                         .padding(.vertical, 16)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                     .onChange(of: vm.messages.count) { _ in
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -37,11 +39,19 @@ struct ChatView: View {
                             proxy.scrollTo("bottom", anchor: .bottom)
                         }
                     }
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: UIResponder.keyboardWillShowNotification)
+                    ) { _ in
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo("bottom", anchor: .bottom)
+                            }
+                        }
+                    }
                 }
 
                 InputBarView()
             }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
             .background(Color(.systemGroupedBackground))
 
             // Sidebar overlay (ChatGPT-style left drawer)

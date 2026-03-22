@@ -183,28 +183,43 @@ final class ChatViewModel: ObservableObject {
     // MARK: - Auth
 
     func signInWithApple(credential: ASAuthorizationAppleIDCredential) {
+        let appleUserId = credential.user  // stable, always present
         let name  = [credential.fullName?.givenName, credential.fullName?.familyName]
             .compactMap { $0 }.joined(separator: " ")
         let email = credential.email ?? ""
 
-        // Apple only sends email on first sign-in; fall back to stored value
-        let resolvedEmail = email.isEmpty ? (StoredUser.load()?.email ?? "") : email
-        let resolvedName  = name.isEmpty  ? (StoredUser.load()?.name  ?? "User") : name
+        print("[SignIn] credential.user      = \(appleUserId)")
+        print("[SignIn] credential.email     = \(email.isEmpty ? "<nil>" : email)")
+        print("[SignIn] credential.fullName  = \(name.isEmpty ? "<nil>" : name)")
 
-        guard !resolvedEmail.isEmpty else {
-            errorMessage = "Could not retrieve email from Apple. Please try again."
-            return
-        }
+        // Apple only sends email/name on the very first sign-in.
+        // Fall back to stored values for subsequent logins or after reinstall.
+        let stored = StoredUser.load()
+        print("[SignIn] StoredUser.load()    = \(stored == nil ? "nil" : "userId=\(stored!.userId) email=\(stored!.email) appleUserId=\(stored!.appleUserId)")")
+
+        let resolvedEmail = !email.isEmpty ? email : (stored?.email ?? "")
+        let resolvedName  = !name.isEmpty  ? name  : (stored?.name  ?? "Apple User")
+
+        print("[SignIn] resolvedEmail        = \(resolvedEmail.isEmpty ? "<empty>" : resolvedEmail)")
+        print("[SignIn] resolvedName         = \(resolvedName)")
 
         Task {
             do {
-                let resp = try await client.login(name: resolvedName, email: resolvedEmail)
-                let user = StoredUser(userId: resp.user_id, name: resp.name, email: resp.email)
+                print("[SignIn] calling /api/auth/login ...")
+                let resp = try await client.login(
+                    name: resolvedName,
+                    email: resolvedEmail,
+                    appleUserId: appleUserId
+                )
+                print("[SignIn] login success: user_id=\(resp.user_id) name=\(resp.name) email=\(resp.email)")
+                let user = StoredUser(userId: resp.user_id, name: resp.name,
+                                      email: resp.email, appleUserId: appleUserId)
                 user.save()
                 currentUser = user
                 showingLogin = false
                 loadSessions()
             } catch {
+                print("[SignIn] login error: \(error)")
                 errorMessage = "Sign-in failed. Please try again."
             }
         }
@@ -237,11 +252,14 @@ struct StoredUser {
     let userId: String
     let name: String
     let email: String
+    let appleUserId: String
 
     private static let key = "iprontoUser"
 
     func save() {
-        let dict: [String: String] = ["userId": userId, "name": name, "email": email]
+        let dict: [String: String] = [
+            "userId": userId, "name": name, "email": email, "appleUserId": appleUserId
+        ]
         if let data = try? JSONEncoder().encode(dict) {
             UserDefaults.standard.set(data, forKey: StoredUser.key)
         }
@@ -250,9 +268,11 @@ struct StoredUser {
     static func load() -> StoredUser? {
         guard let data = UserDefaults.standard.data(forKey: key),
               let dict = try? JSONDecoder().decode([String: String].self, from: data),
-              let userId = dict["userId"], let name = dict["name"], let email = dict["email"]
+              let userId = dict["userId"], let name = dict["name"]
         else { return nil }
-        return StoredUser(userId: userId, name: name, email: email)
+        return StoredUser(userId: userId, name: name,
+                          email: dict["email"] ?? "",
+                          appleUserId: dict["appleUserId"] ?? "")
     }
 
     static func clear() {

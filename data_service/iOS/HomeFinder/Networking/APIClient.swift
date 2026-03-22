@@ -102,12 +102,14 @@ struct APIClient {
 
     // MARK: - Auth
 
-    func login(name: String, email: String) async throws -> AuthResponse {
+    func login(name: String, email: String, appleUserId: String = "") async throws -> AuthResponse {
         guard let url = URL(string: "\(baseURL)/api/auth/login") else { throw URLError(.badURL) }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(["name": name, "email": email])
+        req.httpBody = try JSONEncoder().encode([
+            "name": name, "email": email, "apple_user_id": appleUserId
+        ])
         let (data, _) = try await URLSession.shared.data(for: req)
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
