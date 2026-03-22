@@ -36,6 +36,55 @@ struct APIClient {
         return try JSONDecoder().decode(ChatResponse.self, from: data)
     }
 
+    // MARK: - Streaming
+
+    /// Returns an AsyncThrowingStream of SSE event dicts from /api/chat/stream.
+    /// Consume with `for try await event in client.sendMessageStream(...)` on @MainActor.
+    func sendMessageStream(
+        _ messages: [APIMessage],
+        sessionId: String,
+        userId: String = ""
+    ) -> AsyncThrowingStream<[String: Any], Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    guard let url = URL(string: "\(baseURL)/api/chat/stream") else {
+                        continuation.finish(throwing: URLError(.badURL))
+                        return
+                    }
+
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.timeoutInterval = 120
+                    request.httpBody = try JSONEncoder().encode(
+                        ChatRequest(messages: messages, session_id: sessionId, user_id: userId)
+                    )
+
+                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                        continuation.finish(throwing: URLError(.badServerResponse))
+                        return
+                    }
+
+                    // Each SSE event is one "data: {...}" line; .lines skips blank separators
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data: ") else { continue }
+                        let jsonStr = String(line.dropFirst(6))
+                        guard
+                            let data = jsonStr.data(using: .utf8),
+                            let obj  = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        else { continue }
+                        continuation.yield(obj)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
     func postFeedback(listingId: String, vote: FeedbackVote, sessionId: String, userId: String = "") async {
         guard let url = URL(string: "\(baseURL)/api/feedback") else { return }
 

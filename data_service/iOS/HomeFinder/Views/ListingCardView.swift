@@ -31,19 +31,19 @@ struct ListingCardView: View {
 
                 HStack(spacing: 10) {
                     if let beds = listing.bedroomsTotal {
-                        statLabel("🛏", "\(beds) bd")
+                        statLabel("bed.double.fill", "\(beds) bd")
                     }
-                    statLabel("🚿", "\(listing.displayBaths) ba")
+                    statLabel("shower.fill", "\(listing.displayBaths) ba")
                     if let sqft = listing.sqft, sqft > 0 {
-                        statLabel("📐", "\(Int(sqft)) sqft")
+                        statLabel("ruler.fill", "\(Int(sqft)) sqft")
                     }
                 }
 
                 HStack(spacing: 8) {
-                    feedbackButton(.good, label: "👍 Good",
+                    feedbackButton(.good, label: "Good",  icon: "hand.thumbsup.fill",
                                    activeBackground: Color(red: 0.82, green: 0.96, blue: 0.88),
                                    activeText: .green)
-                    feedbackButton(.bad, label: "👎 Pass",
+                    feedbackButton(.bad,  label: "Pass",  icon: "hand.thumbsdown.fill",
                                    activeBackground: Color(red: 0.99, green: 0.91, blue: 0.91),
                                    activeText: .red)
                 }
@@ -78,10 +78,15 @@ struct ListingCardView: View {
                     switch phase {
                     case .success(let image):
                         image.resizable().scaledToFill()
-                    default:
+                    case .failure:
+                        gradientPlaceholder
+                    case .empty:
+                        gradientPlaceholder
+                    @unknown default:
                         gradientPlaceholder
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
             } else {
                 gradientPlaceholder
@@ -137,7 +142,9 @@ struct ListingCardView: View {
 
     private func statLabel(_ icon: String, _ text: String) -> some View {
         HStack(spacing: 3) {
-            Text(icon).font(.system(size: 12))
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
             Text(text).font(.system(size: 12)).foregroundColor(.secondary)
         }
     }
@@ -145,6 +152,7 @@ struct ListingCardView: View {
     private func feedbackButton(
         _ voteType: FeedbackVote,
         label: String,
+        icon: String,
         activeBackground: Color,
         activeText: Color
     ) -> some View {
@@ -155,17 +163,19 @@ struct ListingCardView: View {
                 vm.postFeedback(listingId: id, vote: voteType)
             }
         } label: {
-            Text(label)
-                .font(.system(size: 13))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-                .background(isActive ? activeBackground : Color(.systemGray6))
-                .foregroundColor(isActive ? activeText : .primary)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(isActive ? activeText : Color(.systemGray4), lineWidth: 1)
-                )
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 12))
+                Text(label).font(.system(size: 13))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(isActive ? activeBackground : Color(.systemGray6))
+            .foregroundColor(isActive ? activeText : .primary)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isActive ? activeText : Color(.systemGray4), lineWidth: 1)
+            )
         }
     }
 

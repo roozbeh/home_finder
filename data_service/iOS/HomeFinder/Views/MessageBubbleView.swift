@@ -35,8 +35,9 @@ struct MessageBubbleView: View {
     // MARK: - Subviews
 
     private var avatarView: some View {
-        Text("🏡")
-            .font(.system(size: 16))
+        Image(systemName: "house.fill")
+            .font(.system(size: 15))
+            .foregroundColor(.white)
             .frame(width: 36, height: 36)
             .background(brandBlue)
             .clipShape(Circle())
@@ -46,11 +47,22 @@ struct MessageBubbleView: View {
     private var bubbleContent: some View {
         switch message.role {
         case .typing:
-            TypingIndicatorView()
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(bubbleBot)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+            if message.text.isEmpty {
+                TypingIndicatorView()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(bubbleBot)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            } else {
+                Text(message.text)
+                    .font(.system(size: 15))
+                    .italic()
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(bubbleBot)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
 
         case .user:
             Text(message.text)

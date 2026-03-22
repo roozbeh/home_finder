@@ -30,6 +30,13 @@ struct ChatView: View {
                             withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
                         }
                     }
+                    .onChange(of: vm.scrollTrigger) { val in
+                        // Scroll every 8 words during streaming, and always on done (listings added)
+                        guard val % 8 == 0 || val == 0 else { return }
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("bottom", anchor: .bottom)
+                        }
+                    }
                 }
 
                 InputBarView()

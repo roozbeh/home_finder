@@ -9,6 +9,7 @@ final class ChatViewModel: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var scrollTrigger = 0
 
     // ── Auth state ────────────────────────────────────────────────────────────
     @Published var currentUser: StoredUser?
@@ -47,38 +48,73 @@ final class ChatViewModel: ObservableObject {
         errorMessage = nil
         isLoading = true
 
-        let typingId = UUID()
-        messages.append(ChatMessage(id: typingId, role: .typing, text: ""))
+        // Two bubbles: text bubble (fills as chunks arrive) + persistent dots below it
+        let textId  = UUID()
+        let dotsId  = UUID()
+        messages.append(ChatMessage(id: textId, role: .typing, text: ""))
+        messages.append(ChatMessage(id: dotsId, role: .typing, text: ""))
 
-        let history  = apiHistory
-        let sid      = sessionId
-        let uid      = currentUser?.userId ?? ""
+        let history = apiHistory
+        let sid     = sessionId
+        let uid     = currentUser?.userId ?? ""
 
         Task {
             defer { isLoading = false }
             do {
-                let response = try await client.sendMessage(history, sessionId: sid, userId: uid)
-                removeMessage(id: typingId)
+                var accumulatedText = ""
+                var finalListings: [Listing] = []
 
-                if let apiError = response.error {
-                    removeMessage(id: userMessage.id)
-                    errorMessage = apiError
-                    return
-                }
+                for try await event in client.sendMessageStream(history, sessionId: sid, userId: uid) {
+                    let type = event["type"] as? String ?? ""
 
-                let rawText  = response.message ?? ""
-                let listings = response.listings ?? []
-                let displayText = rawText
-                    .replacingOccurrences(of: "OPEN_CALENDLY", with: "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    switch type {
+                    case "status":
+                        let statusText = event["text"] as? String ?? ""
+                        updateMessage(id: textId, role: .typing, text: statusText, listings: [])
 
-                messages.append(ChatMessage(role: .assistant, text: displayText, listings: listings))
+                    case "text":
+                        let chunk = event["text"] as? String ?? ""
+                        accumulatedText += chunk
+                        let display = accumulatedText
+                            .replacingOccurrences(of: #"OPEN_CALENDLY\S*"#, with: "",
+                                                  options: .regularExpression)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        updateMessage(id: textId, role: .assistant, text: display, listings: [])
+                        scrollTrigger += 1
 
-                if rawText.contains("OPEN_CALENDLY") {
-                    await UIApplication.shared.open(AppConfig.calendlyURL)
+                    case "done":
+                        let rawText = event["full_text"] as? String ?? accumulatedText
+                        if let listingsRaw = event["listings"] as? [[String: Any]],
+                           let listingsData = try? JSONSerialization.data(withJSONObject: listingsRaw),
+                           let decoded = try? JSONDecoder().decode([Listing].self, from: listingsData) {
+                            finalListings = decoded
+                        }
+                        let display = rawText
+                            .replacingOccurrences(of: #"OPEN_CALENDLY\S*"#, with: "",
+                                                  options: .regularExpression)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        updateMessage(id: textId, role: .assistant, text: display, listings: finalListings)
+                        removeMessage(id: dotsId)
+                        scrollTrigger += 1
+
+                        if rawText.contains("OPEN_CALENDLY") {
+                            Task { await UIApplication.shared.open(AppConfig.calendlyURL) }
+                        }
+
+                    case "error":
+                        let errText = event["text"] as? String ?? "Unknown error"
+                        removeMessage(id: textId)
+                        removeMessage(id: dotsId)
+                        removeMessage(id: userMessage.id)
+                        errorMessage = errText
+
+                    default:
+                        break
+                    }
                 }
             } catch {
-                removeMessage(id: typingId)
+                removeMessage(id: textId)
+                removeMessage(id: dotsId)
                 removeMessage(id: userMessage.id)
                 errorMessage = error.localizedDescription
             }
@@ -187,6 +223,11 @@ final class ChatViewModel: ObservableObject {
 
     private func removeMessage(id: UUID) {
         messages.removeAll { $0.id == id }
+    }
+
+    private func updateMessage(id: UUID, role: MessageRole, text: String, listings: [Listing]) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[idx] = ChatMessage(id: id, role: role, text: text, listings: listings)
     }
 }
 

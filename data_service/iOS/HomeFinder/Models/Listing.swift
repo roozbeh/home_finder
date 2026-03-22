@@ -36,8 +36,20 @@ struct Listing: Codable, Identifiable {
         streetAddress  = try c.decodeIfPresent(String.self,  forKey: .streetAddress)
         city           = try c.decodeIfPresent(String.self,  forKey: .city)
         listPrice      = try c.decodeIfPresent(Double.self,  forKey: .listPrice)
-        bedroomsTotal  = try c.decodeIfPresent(Int.self,     forKey: .bedroomsTotal)
-        bathroomsFull  = try c.decodeIfPresent(Int.self,     forKey: .bathroomsFull)
+        if let i = try? c.decodeIfPresent(Int.self, forKey: .bedroomsTotal) {
+            bedroomsTotal = i
+        } else if let d = try? c.decodeIfPresent(Double.self, forKey: .bedroomsTotal) {
+            bedroomsTotal = Int(d)
+        } else {
+            bedroomsTotal = nil
+        }
+        if let i = try? c.decodeIfPresent(Int.self, forKey: .bathroomsFull) {
+            bathroomsFull = i
+        } else if let d = try? c.decodeIfPresent(Double.self, forKey: .bathroomsFull) {
+            bathroomsFull = Int(d)
+        } else {
+            bathroomsFull = nil
+        }
         bathsDisplay   = try c.decodeIfPresent(String.self,  forKey: .bathsDisplay)
         sqft           = try c.decodeIfPresent(Double.self,  forKey: .sqft)
         mlsStatus      = try c.decodeIfPresent(String.self,  forKey: .mlsStatus)
