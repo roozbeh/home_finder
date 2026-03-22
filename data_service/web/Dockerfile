@@ -11,6 +11,9 @@ COPY web/ .
 # Copy the agentic package so `import agentic` resolves at runtime
 COPY agentic/ ./agentic/
 
+# Expose favicon under /static/
+RUN mkdir -p static && cp favicon.png static/favicon.png
+
 EXPOSE 5000
 
 # Use gunicorn for a proper production-grade server
