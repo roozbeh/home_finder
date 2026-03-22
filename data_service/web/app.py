@@ -33,6 +33,11 @@ def chat_ui():
     return render_template("index.html", calendly_url=CALENDLY_URL)
 
 
+@app.route("/support")
+def support():
+    return render_template("support.html")
+
+
 @app.route("/search")
 def search():
     def _int(val, default=None):
