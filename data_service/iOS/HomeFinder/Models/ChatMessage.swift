@@ -22,6 +22,6 @@ struct ChatMessage: Identifiable {
     /// The initial greeting shown locally — never sent to the API.
     static let greeting = ChatMessage(
         role: .assistant,
-        text: "Hi there! I'm Maya, your Bay Area home finding assistant. 👋\n\nI'm here to help you find the perfect home. Tell me — what are you looking for? For example, are you searching for a family home, a starter home, or something specific in mind?"
+        text: "Hi there! I'm Maya, your Bay Area home finding assistant. 👋\n\nI'm here to help you find the perfect home. Tell me — what are you looking for? For example, are you searching for a family home, a starter home, or something specific in mind?\n\nTip: Sign in to save your conversations and pick up right where you left off — across all your devices."
     )
 }

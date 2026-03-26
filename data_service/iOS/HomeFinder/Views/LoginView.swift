@@ -7,7 +7,7 @@ struct LoginView: View {
     @EnvironmentObject var vm: ChatViewModel
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topTrailing) {
             brandBlue.ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -62,6 +62,18 @@ struct LoginView: View {
                 .padding(.horizontal, 32)
                 .padding(.bottom, 56)
             }
+
+            // Dismiss button
+            Button(action: { vm.showingLogin = false }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(12)
+                    .background(Color.white.opacity(0.15))
+                    .clipShape(Circle())
+            }
+            .padding(.top, 56)
+            .padding(.trailing, 20)
         }
     }
 }

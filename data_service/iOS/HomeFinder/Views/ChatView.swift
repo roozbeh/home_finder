@@ -57,6 +57,10 @@ struct ChatView: View {
             // Sidebar overlay (ChatGPT-style left drawer)
             SidebarView()
         }
+        .sheet(isPresented: $vm.showingLogin) {
+            LoginView()
+                .environmentObject(vm)
+        }
         .onAppear {
             if vm.currentUser != nil { vm.loadSessions() }
         }

@@ -7,6 +7,7 @@ struct ListingCardView: View {
     @EnvironmentObject var vm: ChatViewModel
     @State private var vote: FeedbackVote?
     @State private var showingGallery = false
+    @State private var showingLoginPrompt = false
 
     private var galleryPhotos: [String] {
         listing.photos.isEmpty
@@ -65,6 +66,14 @@ struct ListingCardView: View {
             let addr = [listing.streetAddress, listing.formattedCity]
                 .compactMap { $0 }.joined(separator: ", ")
             PhotoGalleryView(photos: galleryPhotos, title: addr)
+        }
+        .alert("Sign In to Save Favorites", isPresented: $showingLoginPrompt) {
+            Button("Sign In") {
+                vm.showingLogin = true
+            }
+            Button("Not Now", role: .cancel) {}
+        } message: {
+            Text("Sign in to save your favorite listings and access them anytime.")
         }
     }
 
@@ -158,6 +167,10 @@ struct ListingCardView: View {
     ) -> some View {
         let isActive = vote == voteType
         return Button {
+            guard vm.currentUser != nil else {
+                showingLoginPrompt = true
+                return
+            }
             vote = voteType
             if let id = listing.listingId {
                 vm.postFeedback(listingId: id, vote: voteType)

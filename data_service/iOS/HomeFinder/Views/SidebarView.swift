@@ -68,7 +68,20 @@ struct SidebarView: View {
                 .padding(.vertical, 12)
 
             // Session list
-            if vm.isLoadingSessions {
+            if vm.currentUser == nil {
+                VStack(spacing: 12) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 28))
+                        .foregroundColor(.white.opacity(0.35))
+                    Text("Sign in to save and access your previous conversations")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.5))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 30)
+            } else if vm.isLoadingSessions {
                 ProgressView()
                     .tint(.white)
                     .frame(maxWidth: .infinity)
