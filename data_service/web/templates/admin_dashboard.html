@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Dashboard — iPronto</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body       { background: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .topbar    { background: #092a56; color: #fff; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+    .topbar h1 { font-size: 1.15rem; font-weight: 700; margin: 0; }
+    .topbar .actions a {
+      color: rgba(255,255,255,.65); font-size: .85rem; text-decoration: none; margin-left: 20px;
+    }
+    .topbar .actions a:hover { color: #fff; }
+
+    .content   { padding: 28px 28px 60px; max-width: 1400px; margin: 0 auto; }
+
+    /* Metric cards */
+    .metric-group { background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 6px rgba(0,0,0,.08); height: 100%; }
+    .metric-group .group-title { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #888; margin-bottom: 16px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+    .metric-item { text-align: center; padding: 4px 6px; }
+    .metric-item + .metric-item { border-left: 1px solid #f0f0f0; }
+    .metric-label { font-size: .72rem; color: #999; margin-bottom: 4px; }
+    .metric-value { font-size: 1.6rem; font-weight: 800; color: #092a56; line-height: 1; }
+    .metric-value.green  { color: #198754; }
+    .metric-value.orange { color: #fd7e14; }
+
+    /* Section header */
+    .section-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #888; margin-bottom: 12px; margin-top: 32px; }
+
+    /* Chart card */
+    .chart-card { background: #fff; border-radius: 14px; padding: 22px 24px; box-shadow: 0 1px 6px rgba(0,0,0,.08); }
+
+    /* Stat pills */
+    .stat-pill {
+      background: #fff;
+      border-radius: 14px;
+      padding: 18px 22px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.08);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .stat-icon { font-size: 1.8rem; line-height: 1; }
+    .stat-label { font-size: .78rem; color: #888; }
+    .stat-value { font-size: 1.45rem; font-weight: 800; color: #092a56; line-height: 1.1; }
+
+    /* Tables */
+    .table-card { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); overflow: hidden; }
+    .table-card .table { margin: 0; font-size: .88rem; }
+    .table-card .table thead th { background: #092a56; color: #fff; border: none; font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; padding: 11px 16px; white-space: nowrap; }
+    .table-card .table tbody td { padding: 10px 16px; vertical-align: middle; border-color: #f3f4f6; color: #333; }
+    .table-card .table tbody tr:last-child td { border-bottom: none; }
+    .table-card .table tbody tr:hover { background: #f8f9ff; }
+
+    /* Badges */
+    .badge-lead { background: #d4edda; color: #155724; border-radius: 20px; padding: 3px 10px; font-size: .76rem; font-weight: 600; }
+    .badge-session { background: #cce5ff; color: #004085; border-radius: 20px; padding: 3px 10px; font-size: .76rem; font-weight: 600; }
+
+    /* City bar */
+    .city-bar-wrap { display: flex; flex-direction: column; gap: 8px; }
+    .city-row { display: flex; align-items: center; gap: 10px; font-size: .85rem; }
+    .city-name { width: 120px; color: #444; font-weight: 500; flex-shrink: 0; }
+    .city-bar-bg { flex: 1; background: #e9ecef; border-radius: 4px; height: 8px; }
+    .city-bar-fill { background: #092a56; border-radius: 4px; height: 8px; min-width: 4px; }
+    .city-count { width: 28px; text-align: right; color: #888; font-size: .78rem; }
+
+    /* Links */
+    a.view-link { color: #092a56; font-weight: 600; text-decoration: none; font-size: .82rem; }
+    a.view-link:hover { text-decoration: underline; }
+
+    .text-truncate-custom { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+
+    .empty-state { text-align: center; color: #bbb; padding: 32px 16px; font-size: .9rem; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🏠 iPronto Admin Dashboard</h1>
+  <div class="actions">
+    <a href="/">View Site</a>
+    <a href="/admin/logout">Sign Out</a>
+  </div>
+</div>
+
+<div class="content">
+
+  <!-- ── Metric cards ── -->
+  <div class="row g-3">
+    <!-- Sessions -->
+    <div class="col-12 col-md-4">
+      <div class="metric-group">
+        <div class="group-title">💬 Conversations</div>
+        <div class="metric-grid">
+          <div class="metric-item">
+            <div class="metric-label">Today</div>
+            <div class="metric-value">{{ sessions_today }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">7 Days</div>
+            <div class="metric-value">{{ sessions_week }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">30 Days</div>
+            <div class="metric-value">{{ sessions_month }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">Total</div>
+            <div class="metric-value">{{ sessions_total }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Users -->
+    <div class="col-12 col-md-4">
+      <div class="metric-group">
+        <div class="group-title">👤 Users Signed Up</div>
+        <div class="metric-grid">
+          <div class="metric-item">
+            <div class="metric-label">Today</div>
+            <div class="metric-value green">{{ users_today }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">7 Days</div>
+            <div class="metric-value green">{{ users_week }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">30 Days</div>
+            <div class="metric-value green">{{ users_month }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">Total</div>
+            <div class="metric-value green">{{ users_total }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leads -->
+    <div class="col-12 col-md-4">
+      <div class="metric-group">
+        <div class="group-title">🎯 Leads Captured</div>
+        <div class="metric-grid">
+          <div class="metric-item">
+            <div class="metric-label">Today</div>
+            <div class="metric-value orange">{{ leads_today }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">7 Days</div>
+            <div class="metric-value orange">{{ leads_week }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">30 Days</div>
+            <div class="metric-value orange">{{ leads_month }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">Total</div>
+            <div class="metric-value orange">{{ leads_total }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Engagement stats ── -->
+  <div class="section-title">Engagement</div>
+  <div class="row g-3">
+    <div class="col-6 col-md-3">
+      <div class="stat-pill">
+        <div class="stat-icon">💬</div>
+        <div>
+          <div class="stat-label">Avg msgs / session</div>
+          <div class="stat-value">{{ avg_messages }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-pill">
+        <div class="stat-icon">🎯</div>
+        <div>
+          <div class="stat-label">Lead conversion rate</div>
+          <div class="stat-value">{{ conversion_rate }}%</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-pill">
+        <div class="stat-icon">👍</div>
+        <div>
+          <div class="stat-label">Liked listings</div>
+          <div class="stat-value">{{ thumbs_up }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-pill">
+        <div class="stat-icon">👎</div>
+        <div>
+          <div class="stat-label">Disliked listings</div>
+          <div class="stat-value">{{ thumbs_down }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Activity chart + top cities ── -->
+  <div class="section-title">Activity</div>
+  <div class="row g-3">
+    <div class="col-12 col-md-8">
+      <div class="chart-card">
+        <div style="font-size:.82rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;">
+          Conversations — Last 14 Days
+        </div>
+        <canvas id="sessionsChart" height="90"></canvas>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+      <div class="chart-card" style="height:100%;">
+        <div style="font-size:.82rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:16px;">
+          Top Cities (Liked Listings)
+        </div>
+        {% if top_cities %}
+        {% set max_count = top_cities[0].count %}
+        <div class="city-bar-wrap">
+          {% for city in top_cities %}
+          <div class="city-row">
+            <span class="city-name">{{ city.city }}</span>
+            <div class="city-bar-bg">
+              <div class="city-bar-fill" style="width: {{ (city.count / max_count * 100)|int }}%"></div>
+            </div>
+            <span class="city-count">{{ city.count }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">No feedback data yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Leads table ── -->
+  <div class="section-title">Recent Leads</div>
+  <div class="table-card">
+    {% if recent_leads %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Preferences</th>
+          <th>Date</th>
+          <th>Conversation</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lead in recent_leads %}
+        <tr>
+          <td><strong>{{ lead.name or '—' }}</strong></td>
+          <td>
+            {% if lead.email %}
+            <a href="mailto:{{ lead.email }}" style="color:#092a56;">{{ lead.email }}</a>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if lead.phone %}
+            <a href="tel:{{ lead.phone }}" style="color:#092a56;">{{ lead.phone }}</a>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="text-truncate-custom" title="{{ lead.preferences or '' }}" style="max-width:200px;">
+              {{ lead.preferences or '—' }}
+            </span>
+          </td>
+          <td style="white-space:nowrap;color:#888;font-size:.82rem;">
+            {% if lead.created_at %}{{ lead.created_at[:10] }}{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if lead.session_id %}
+            <a class="view-link" href="/admin/conversation/{{ lead.session_id }}">View →</a>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No leads yet — Maya hasn't collected any contact info.</div>
+    {% endif %}
+  </div>
+
+  <!-- ── Recent sessions table ── -->
+  <div class="section-title">Recent Conversations</div>
+  <div class="table-card">
+    {% if recent_sessions %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Messages</th>
+          <th>Started</th>
+          <th>Last Active</th>
+          <th>View</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in recent_sessions %}
+        <tr>
+          <td>
+            <span class="text-truncate-custom" title="{{ s.title or 'Untitled' }}">
+              {{ s.title or 'Untitled' }}
+            </span>
+          </td>
+          <td><span class="badge-session">{{ s.msg_count }}</span></td>
+          <td style="white-space:nowrap;color:#888;font-size:.82rem;">
+            {% if s.created_at %}{{ s.created_at[:10] }}{% else %}—{% endif %}
+          </td>
+          <td style="white-space:nowrap;color:#888;font-size:.82rem;">
+            {% if s.updated_at %}{{ s.updated_at[:10] }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <a class="view-link" href="/admin/conversation/{{ s.session_id }}">View →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No conversations yet.</div>
+    {% endif %}
+  </div>
+
+  <!-- ── Top liked listings ── -->
+  {% if top_liked %}
+  <div class="section-title">Most Liked Listings</div>
+  <div class="table-card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Listing</th>
+          <th>City</th>
+          <th>Price</th>
+          <th>Likes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in top_liked %}
+        <tr>
+          <td>
+            <a href="/listing/{{ item._id }}" style="color:#092a56;font-weight:600;">
+              {{ item.address or item._id }}
+            </a>
+          </td>
+          <td>{{ item.city or '—' }}</td>
+          <td>
+            {% if item.price %}${{ '{:,.0f}'.format(item.price) }}{% else %}—{% endif %}
+          </td>
+          <td><span class="badge-lead">👍 {{ item.likes }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div><!-- /content -->
+
+<script>
+  const labels = {{ chart_labels | tojson }};
+  const data   = {{ chart_data   | tojson }};
+
+  new Chart(document.getElementById('sessionsChart'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Conversations',
+        data:  data,
+        backgroundColor: 'rgba(9,42,86,.75)',
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.parsed.y} conversation${ctx.parsed.y !== 1 ? 's' : ''}`
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { stepSize: 1, precision: 0 },
+          grid:  { color: '#f0f2f5' },
+        },
+        x: {
+          grid: { display: false },
+          ticks: { font: { size: 11 } },
+        }
+      }
+    }
+  });
+</script>
+
+</body>
+</html>

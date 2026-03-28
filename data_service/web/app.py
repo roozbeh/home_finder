@@ -5,8 +5,9 @@ import os
 import uuid
 import time
 import logging
-from datetime import datetime, timezone
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context
+from datetime import datetime, timezone, timedelta
+from functools import wraps
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect
 from pymongo import MongoClient
 import anthropic
 
@@ -14,16 +15,29 @@ from agentic.agent import run_agent, run_agent_streaming
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-MONGO_URI     = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
-MONGO_DB      = os.environ.get("MONGO_DB", "mls")
-ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-CALENDLY_URL  = "https://calendly.com/ruzbeh-o0w7/new-meeting"
-PAGE_SIZE     = 10
+MONGO_URI      = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+MONGO_DB       = os.environ.get("MONGO_DB", "mls")
+ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+CALENDLY_URL   = "https://calendly.com/ruzbeh-o0w7/new-meeting"
+PAGE_SIZE      = 10
+SECRET_KEY     = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 
-app    = Flask(__name__)
-mongo  = MongoClient(MONGO_URI, connect=False)
-db     = mongo[MONGO_DB]
-ai     = anthropic.Anthropic(api_key=ANTHROPIC_KEY) if ANTHROPIC_KEY else None
+app            = Flask(__name__)
+app.secret_key = SECRET_KEY
+mongo          = MongoClient(MONGO_URI, connect=False)
+db             = mongo[MONGO_DB]
+ai             = anthropic.Anthropic(api_key=ANTHROPIC_KEY) if ANTHROPIC_KEY else None
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("admin_logged_in"):
+            return redirect("/admin/login")
+        return f(*args, **kwargs)
+    return decorated
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -319,6 +333,229 @@ def api_auth_me():
     if not user:
         return jsonify({"error": "not found"}), 404
     return jsonify(user)
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+@app.route("/admin")
+def admin_index():
+    if session.get("admin_logged_in"):
+        return redirect("/admin/dashboard")
+    return redirect("/admin/login")
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session["admin_logged_in"] = True
+            return redirect("/admin/dashboard")
+        error = "Invalid username or password."
+    return render_template("admin_login.html", error=error)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin_logged_in", None)
+    return redirect("/admin/login")
+
+
+@app.route("/admin/dashboard")
+@admin_required
+def admin_dashboard():
+    now         = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start  = now - timedelta(days=7)
+    month_start = now - timedelta(days=30)
+
+    # ── Core metrics ──────────────────────────────────────────────────────────
+    sessions_today = db.chat_sessions.count_documents({"created_at": {"$gte": today_start}})
+    sessions_week  = db.chat_sessions.count_documents({"created_at": {"$gte": week_start}})
+    sessions_month = db.chat_sessions.count_documents({"created_at": {"$gte": month_start}})
+    sessions_total = db.chat_sessions.count_documents({})
+
+    users_today = db.users.count_documents({"created_at": {"$gte": today_start}})
+    users_week  = db.users.count_documents({"created_at": {"$gte": week_start}})
+    users_month = db.users.count_documents({"created_at": {"$gte": month_start}})
+    users_total = db.users.count_documents({})
+
+    leads_today = db.contacts.count_documents({"created_at": {"$gte": today_start}})
+    leads_week  = db.contacts.count_documents({"created_at": {"$gte": week_start}})
+    leads_month = db.contacts.count_documents({"created_at": {"$gte": month_start}})
+    leads_total = db.contacts.count_documents({})
+
+    # ── Engagement stats ──────────────────────────────────────────────────────
+    thumbs_up   = db.listing_feedback.count_documents({"feedback": "good"})
+    thumbs_down = db.listing_feedback.count_documents({"feedback": "bad"})
+
+    # Average messages per session (sample up to 500 recent sessions)
+    sample_sessions = list(db.chat_sessions.find({}, {"messages": 1}).sort("updated_at", -1).limit(500))
+    if sample_sessions:
+        avg_messages = sum(len(s.get("messages", [])) for s in sample_sessions) / len(sample_sessions)
+    else:
+        avg_messages = 0.0
+
+    # Sessions with a lead captured (Maya called save_contact)
+    sessions_with_lead = db.contacts.distinct("session_id")
+    conversion_rate = (len(sessions_with_lead) / sessions_total * 100) if sessions_total else 0
+
+    # ── Chart data: sessions per day for last 14 days ─────────────────────────
+    fourteen_days_ago = now - timedelta(days=13)
+    pipeline = [
+        {"$match": {"created_at": {"$gte": fourteen_days_ago}}},
+        {"$group": {
+            "_id":   {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
+            "count": {"$sum": 1},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    daily_map = {item["_id"]: item["count"] for item in db.chat_sessions.aggregate(pipeline)}
+    chart_labels = []
+    chart_data   = []
+    for i in range(13, -1, -1):
+        d = now - timedelta(days=i)
+        chart_labels.append(d.strftime("%b %d"))
+        chart_data.append(daily_map.get(d.strftime("%Y-%m-%d"), 0))
+
+    # ── Recent leads ──────────────────────────────────────────────────────────
+    recent_leads = list(db.contacts.find({}, {"_id": 0}).sort("created_at", -1).limit(25))
+    for lead in recent_leads:
+        if hasattr(lead.get("created_at"), "isoformat"):
+            lead["created_at"] = lead["created_at"].isoformat()
+
+    # ── Recent sessions ───────────────────────────────────────────────────────
+    recent_sessions = list(
+        db.chat_sessions
+          .find({}, {"_id": 0, "messages": 0})
+          .sort("updated_at", -1)
+          .limit(25)
+    )
+    for s in recent_sessions:
+        s["msg_count"] = len(
+            db.chat_sessions.find_one({"session_id": s["session_id"]}, {"messages": 1}).get("messages", [])
+        )
+        for k in ("created_at", "updated_at"):
+            if k in s and hasattr(s[k], "isoformat"):
+                s[k] = s[k].isoformat()
+
+    # ── Top liked listings ────────────────────────────────────────────────────
+    top_liked = list(db.listing_feedback.aggregate([
+        {"$match": {"feedback": "good"}},
+        {"$group": {"_id": "$listing_id", "likes": {"$sum": 1}}},
+        {"$sort": {"likes": -1}},
+        {"$limit": 5},
+    ]))
+    for item in top_liked:
+        doc = db.mls_listings.find_one(
+            {"LISTING_ID": item["_id"]},
+            {"STREET_ADDRESS": 1, "CITY": 1, "LIST_PRICE": 1},
+        )
+        if doc:
+            item["address"] = doc.get("STREET_ADDRESS", "")
+            item["city"]    = doc.get("CITY", "").title()
+            item["price"]   = doc.get("LIST_PRICE", 0)
+        else:
+            item["address"] = item["_id"]
+            item["city"]    = ""
+            item["price"]   = 0
+
+    # ── Top cities from listing feedback ─────────────────────────────────────
+    city_pipeline = [
+        {"$match": {"feedback": "good"}},
+        {"$lookup": {
+            "from":         "mls_listings",
+            "localField":   "listing_id",
+            "foreignField": "LISTING_ID",
+            "as":           "listing",
+        }},
+        {"$unwind": "$listing"},
+        {"$group": {"_id": "$listing.CITY", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 8},
+    ]
+    top_cities = [
+        {"city": item["_id"].title(), "count": item["count"]}
+        for item in db.listing_feedback.aggregate(city_pipeline)
+        if item.get("_id")
+    ]
+
+    return render_template(
+        "admin_dashboard.html",
+        sessions_today=sessions_today,
+        sessions_week=sessions_week,
+        sessions_month=sessions_month,
+        sessions_total=sessions_total,
+        users_today=users_today,
+        users_week=users_week,
+        users_month=users_month,
+        users_total=users_total,
+        leads_today=leads_today,
+        leads_week=leads_week,
+        leads_month=leads_month,
+        leads_total=leads_total,
+        thumbs_up=thumbs_up,
+        thumbs_down=thumbs_down,
+        avg_messages=round(avg_messages, 1),
+        conversion_rate=round(conversion_rate, 1),
+        chart_labels=chart_labels,
+        chart_data=chart_data,
+        recent_leads=recent_leads,
+        recent_sessions=recent_sessions,
+        top_liked=top_liked,
+        top_cities=top_cities,
+    )
+
+
+@app.route("/admin/conversation/<conv_session_id>")
+@admin_required
+def admin_conversation(conv_session_id):
+    conv = db.chat_sessions.find_one({"session_id": conv_session_id}, {"_id": 0})
+    if not conv:
+        return "Session not found", 404
+
+    user = None
+    if conv.get("user_id"):
+        user = db.users.find_one({"user_id": conv["user_id"]}, {"_id": 0})
+        if user and hasattr(user.get("created_at"), "isoformat"):
+            user["created_at"] = user["created_at"].isoformat()
+
+    # Contacts saved during this session
+    saved_contacts = list(db.contacts.find({"session_id": conv_session_id}, {"_id": 0}))
+    for c in saved_contacts:
+        if hasattr(c.get("created_at"), "isoformat"):
+            c["created_at"] = c["created_at"].isoformat()
+
+    # Feedback given during this session
+    feedback_items = list(db.listing_feedback.find({"session_id": conv_session_id}, {"_id": 0}))
+    for f in feedback_items:
+        doc = db.mls_listings.find_one({"LISTING_ID": f.get("listing_id")}, {"STREET_ADDRESS": 1, "CITY": 1})
+        f["address"] = doc.get("STREET_ADDRESS", f.get("listing_id", "")) if doc else f.get("listing_id", "")
+        if hasattr(f.get("timestamp"), "isoformat"):
+            f["timestamp"] = f["timestamp"].isoformat()
+
+    # Count user messages for quick stats
+    messages = conv.get("messages", [])
+    user_msg_count      = sum(1 for m in messages if m.get("role") == "user")
+    assistant_msg_count = sum(1 for m in messages if m.get("role") == "assistant")
+    listings_shown      = sum(len(m.get("listings", [])) for m in messages if m.get("role") == "assistant")
+
+    for k in ("created_at", "updated_at"):
+        if k in conv and hasattr(conv[k], "isoformat"):
+            conv[k] = conv[k].isoformat()
+
+    return render_template(
+        "admin_conversation.html",
+        conv=conv,
+        user=user,
+        saved_contacts=saved_contacts,
+        feedback_items=feedback_items,
+        user_msg_count=user_msg_count,
+        assistant_msg_count=assistant_msg_count,
+        listings_shown=listings_shown,
+    )
 
 
 if __name__ == "__main__":
