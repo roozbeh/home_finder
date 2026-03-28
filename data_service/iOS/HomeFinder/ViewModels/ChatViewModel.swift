@@ -232,6 +232,17 @@ final class ChatViewModel: ObservableObject {
         startNewChat()
     }
 
+    func deleteAccount() {
+        guard let uid = currentUser?.userId else { return }
+        // Clear local state immediately so the UI responds at once
+        StoredUser.clear()
+        currentUser = nil
+        sessions    = []
+        startNewChat()
+        // Fire the server request in the background
+        Task { try? await client.deleteAccount(userId: uid) }
+    }
+
     // MARK: - Helpers
 
     func dismissError() { errorMessage = nil }

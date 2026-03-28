@@ -272,12 +272,12 @@ def api_auth_login():
     apple_user_id = (data.get("apple_user_id") or "").strip()
 
     # Look up by apple_user_id first (stable across reinstalls),
-    # then fall back to email lookup.
+    # then fall back to email lookup. Exclude soft-deleted accounts.
     user = None
     if apple_user_id:
-        user = db.users.find_one({"apple_user_id": apple_user_id})
+        user = db.users.find_one({"apple_user_id": apple_user_id, "is_deleted": {"$ne": True}})
     if user is None and email:
-        user = db.users.find_one({"email": email})
+        user = db.users.find_one({"email": email, "is_deleted": {"$ne": True}})
 
     # Require at least apple_user_id or email to identify/create the user
     if user is None and not email and not apple_user_id:
@@ -308,6 +308,31 @@ def api_auth_login():
             name = user.get("name", "")
 
     return jsonify({"user_id": user_id, "name": name, "email": email})
+
+
+@app.route("/api/auth/account", methods=["DELETE"])
+def api_auth_delete_account():
+    data    = request.get_json(force=True)
+    user_id = (data.get("user_id") or "").strip()
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    deleted_id = f"{user_id}_deleted"
+    result = db.users.update_one(
+        {"user_id": user_id, "is_deleted": {"$ne": True}},
+        {"$set": {
+            "user_id":       deleted_id,
+            "apple_user_id": "",          # prevent re-login finding this record
+            "email":         "",          # prevent email lookup finding this record
+            "is_deleted":    True,
+            "deleted_at":    datetime.now(timezone.utc),
+        }},
+    )
+    if result.matched_count == 0:
+        return jsonify({"error": "user not found"}), 404
+    # Re-tag chat sessions so the weekly purge can find and delete them
+    db.chat_sessions.update_many({"user_id": user_id}, {"$set": {"user_id": deleted_id}})
+    logging.info("[auth] account deleted user_id=%s → %s", user_id, deleted_id)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/auth/me", methods=["GET"])

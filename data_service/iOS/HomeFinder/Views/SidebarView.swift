@@ -4,6 +4,7 @@ private let brandBlue = Color(red: 0.035, green: 0.165, blue: 0.337)
 
 struct SidebarView: View {
     @EnvironmentObject var vm: ChatViewModel
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -138,29 +139,47 @@ struct SidebarView: View {
     @ViewBuilder
     private var userFooter: some View {
         if let user = vm.currentUser {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: 36, height: 36)
-                    .overlay(
-                        Text(String(user.name.prefix(1)).uppercased())
-                            .font(.system(size: 16, weight: .semibold))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            Text(String(user.name.prefix(1)).uppercased())
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                        )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(user.name)
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.white)
-                    )
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(user.name)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                    Text(user.email)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.55))
-                        .lineLimit(1)
+                        Text(user.email)
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.55))
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Button(action: { vm.signOut() }) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .font(.system(size: 15))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
                 }
-                Spacer()
-                Button(action: { vm.signOut() }) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 15))
-                        .foregroundColor(.white.opacity(0.6))
+
+                Button(action: { showingDeleteConfirmation = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12))
+                        Text("Delete Account")
+                            .font(.system(size: 13))
+                    }
+                    .foregroundColor(Color(red: 1, green: 0.45, blue: 0.45))
+                }
+                .alert("Delete Account", isPresented: $showingDeleteConfirmation) {
+                    Button("Delete", role: .destructive) { vm.deleteAccount() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This will permanently delete your account and all your past activity, including conversation history and saved favorites. This cannot be undone.")
                 }
             }
         } else {

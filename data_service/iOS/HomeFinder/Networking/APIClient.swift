@@ -114,6 +114,18 @@ struct APIClient {
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
 
+    func deleteAccount(userId: String) async throws {
+        guard let url = URL(string: "\(baseURL)/api/auth/account") else { throw URLError(.badURL) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(["user_id": userId])
+        let (_, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
     // MARK: - Sessions
 
     func fetchSessions(userId: String) async throws -> [ChatSession] {

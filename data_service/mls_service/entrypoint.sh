@@ -8,9 +8,10 @@ printenv | grep -E '^(MLS_|MONGO_|HEADLESS|COOKIES|WDM_|CHROME)' \
   | sed 's/^\(.*=.*\)$/export \1/' > /etc/profile.d/mls-env.sh
 chmod 644 /etc/profile.d/mls-env.sh
 
-# 2. Install crontab — run get_cookies then search_and_store every day at 02:00.
+# 2. Install crontab — daily fetch at 02:00; weekly account purge on Sunday at 03:00.
 (crontab -l 2>/dev/null; echo \
-  "0 2 * * * . /etc/profile.d/mls-env.sh && cd /app && python get_cookies.py && python search_and_store.py && python fetch_details.py >> /var/log/mls_cron.log 2>&1") \
+  "0 2 * * * . /etc/profile.d/mls-env.sh && cd /app && python get_cookies.py && python search_and_store.py && python fetch_details.py >> /var/log/mls_cron.log 2>&1"; echo \
+  "0 3 * * 0 . /etc/profile.d/mls-env.sh && cd /app && python purge_deleted_accounts.py >> /var/log/mls_cron.log 2>&1") \
   | crontab -
 
 touch /var/log/mls_cron.log
