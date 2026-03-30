@@ -335,6 +335,100 @@ def api_auth_me():
     return jsonify(user)
 
 
+# ── SEO / Growth ──────────────────────────────────────────────────────────────
+
+@app.route("/robots.txt")
+def robots_txt():
+    content = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /admin\n"
+        "Disallow: /api/\n"
+        f"Sitemap: https://ai.roozbeh.realtor/sitemap.xml\n"
+    )
+    return Response(content, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    urls = [
+        ("https://ai.roozbeh.realtor/",             "1.0",  "daily"),
+        ("https://ai.roozbeh.realtor/about",         "0.9",  "monthly"),
+        ("https://ai.roozbeh.realtor/search",        "0.8",  "daily"),
+        ("https://ai.roozbeh.realtor/get-the-app",   "0.8",  "monthly"),
+        ("https://ai.roozbeh.realtor/support",       "0.5",  "monthly"),
+        ("https://ai.roozbeh.realtor/privacy_policy","0.3",  "monthly"),
+    ]
+    # Neighborhood pages
+    cities = db.mls_listings.distinct("CITY")
+    for city in sorted(cities):
+        slug = city.lower().replace(" ", "-")
+        urls.append((f"https://ai.roozbeh.realtor/homes-for-sale/{slug}", "0.9", "daily"))
+    # Active listing pages (cap at 1000 to keep sitemap manageable)
+    active = list(
+        db.mls_listings
+          .find({"MLS_STATUS": {"$in": ["ACTV", "NEW", "AC"]}}, {"LISTING_ID": 1, "_updated_at": 1})
+          .sort("_updated_at", -1)
+          .limit(1000)
+    )
+    for doc in active:
+        lid  = doc.get("LISTING_ID", "")
+        date = doc.get("_updated_at")
+        lastmod = date.strftime("%Y-%m-%d") if hasattr(date, "strftime") else ""
+        urls.append((f"https://ai.roozbeh.realtor/listing/{lid}", "0.7", "weekly", lastmod))
+
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for entry in urls:
+        loc, priority, changefreq = entry[0], entry[1], entry[2]
+        lastmod = entry[3] if len(entry) > 3 else ""
+        lines.append("  <url>")
+        lines.append(f"    <loc>{loc}</loc>")
+        lines.append(f"    <changefreq>{changefreq}</changefreq>")
+        lines.append(f"    <priority>{priority}</priority>")
+        if lastmod:
+            lines.append(f"    <lastmod>{lastmod}</lastmod>")
+        lines.append("  </url>")
+    lines.append("</urlset>")
+    return Response("\n".join(lines), mimetype="application/xml")
+
+
+@app.route("/get-the-app")
+def get_the_app():
+    return render_template("get_the_app.html")
+
+
+@app.route("/homes-for-sale/<city_slug>")
+def homes_for_sale(city_slug):
+    city_query = city_slug.upper().replace("-", " ")
+    listings = list(
+        db.mls_listings
+          .find(
+              {"CITY": city_query, "MLS_STATUS": {"$in": ["ACTV", "NEW", "AC"]}},
+              {"_id": 0, "_history": 0, "SOURCE_MLS_CIRCLE": 0, "TOOLS": 0, "LPHOTOS": 0},
+          )
+          .sort("LIST_PRICE", 1)
+          .limit(24)
+    )
+    if not listings and city_query not in db.mls_listings.distinct("CITY"):
+        return "City not found", 404
+    city_title = city_slug.replace("-", " ").title()
+    count = db.mls_listings.count_documents(
+        {"CITY": city_query, "MLS_STATUS": {"$in": ["ACTV", "NEW", "AC"]}}
+    )
+    min_price = min((l["LIST_PRICE"] for l in listings if l.get("LIST_PRICE")), default=None)
+    max_price = max((l["LIST_PRICE"] for l in listings if l.get("LIST_PRICE")), default=None)
+    return render_template(
+        "city_listings.html",
+        city_title=city_title,
+        city_slug=city_slug,
+        listings=listings,
+        count=count,
+        min_price=min_price,
+        max_price=max_price,
+    )
+
+
 # ── Admin ─────────────────────────────────────────────────────────────────────
 
 @app.route("/admin")

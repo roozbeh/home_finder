@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Get BayArea Home Finder — iPronto</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <meta name="description" content="Download BayArea Home Finder, the AI-powered home search app for the Bay Area. Chat with Maya to find homes for sale in San Mateo, Sunnyvale, Palo Alto, and more.">
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://ai.roozbeh.realtor/get-the-app">
+  <meta property="og:title" content="BayArea Home Finder — Download the App">
+  <meta property="og:description" content="Find your perfect Bay Area home by chatting with Maya, your AI real estate assistant. Available on the App Store.">
+  <meta property="og:site_name" content="iPronto">
+  <!-- Smart App Banner -->
+  <meta name="apple-itunes-app" content="app-id=YOUR_APP_STORE_ID">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f6fa;
+      color: #222;
+    }
+
+    /* ── Nav ── */
+    .nav {
+      background: #092a56;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav a { color: rgba(255,255,255,.75); text-decoration: none; font-size: .9rem; }
+    .nav a:hover { color: #fff; }
+    .nav-logo { color: #fff; font-weight: 700; font-size: 1.1rem; text-decoration: none; }
+
+    /* ── Hero ── */
+    .hero {
+      background: linear-gradient(135deg, #092a56 0%, #1a4a8a 100%);
+      color: #fff;
+      padding: 64px 24px 72px;
+      text-align: center;
+    }
+    .hero-icon { font-size: 3.5rem; margin-bottom: 16px; }
+    .hero h1 { font-size: clamp(1.7rem, 4vw, 2.4rem); font-weight: 800; margin-bottom: 12px; }
+    .hero p  { font-size: 1.05rem; opacity: .85; max-width: 500px; margin: 0 auto 32px; line-height: 1.6; }
+
+    /* App Store button */
+    .app-store-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: #fff;
+      color: #092a56;
+      border-radius: 12px;
+      padding: 12px 24px;
+      font-weight: 700;
+      font-size: 1rem;
+      text-decoration: none;
+      box-shadow: 0 4px 20px rgba(0,0,0,.2);
+      transition: transform .15s, box-shadow .15s;
+    }
+    .app-store-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,.25); }
+    .app-store-btn svg { width: 24px; height: 24px; flex-shrink: 0; }
+
+    /* ── Content ── */
+    .content { max-width: 900px; margin: 0 auto; padding: 48px 24px 64px; }
+
+    /* Features */
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 56px; }
+    .feature-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.08);
+    }
+    .feature-icon { font-size: 2rem; margin-bottom: 12px; }
+    .feature-card h3 { font-size: 1rem; font-weight: 700; color: #092a56; margin-bottom: 6px; }
+    .feature-card p  { font-size: .88rem; color: #666; line-height: 1.55; }
+
+    /* QR + download section */
+    .download-section {
+      background: #fff;
+      border-radius: 16px;
+      padding: 36px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.08);
+      display: flex;
+      align-items: center;
+      gap: 40px;
+      flex-wrap: wrap;
+      margin-bottom: 48px;
+    }
+    .qr-wrap {
+      flex-shrink: 0;
+      text-align: center;
+    }
+    #qrcode canvas, #qrcode img { border-radius: 10px; }
+    .qr-label { font-size: .78rem; color: #888; margin-top: 8px; }
+    .download-text h2 { font-size: 1.3rem; font-weight: 700; color: #092a56; margin-bottom: 8px; }
+    .download-text p  { color: #555; font-size: .92rem; line-height: 1.6; margin-bottom: 20px; }
+
+    .badge-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .badge-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #f0f4ff; color: #092a56;
+      border-radius: 20px; padding: 5px 14px;
+      font-size: .82rem; font-weight: 600;
+    }
+
+    /* Cities */
+    .cities-section { margin-bottom: 48px; }
+    .cities-section h2 { font-size: 1.2rem; font-weight: 700; color: #092a56; margin-bottom: 16px; }
+    .city-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .city-chip {
+      background: #fff;
+      border: 1.5px solid #dde3f0;
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: .85rem;
+      color: #333;
+      text-decoration: none;
+      transition: background .15s, border-color .15s;
+    }
+    .city-chip:hover { background: #092a56; color: #fff; border-color: #092a56; }
+
+    /* Footer */
+    footer { text-align: center; color: #aaa; font-size: .82rem; padding: 24px; border-top: 1px solid #e8eaed; }
+    footer a { color: #888; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-logo">🏠 iPronto</a>
+  <div style="display:flex;gap:20px;">
+    <a href="/">Chat with Maya</a>
+    <a href="/about">About</a>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<div class="hero">
+  <div class="hero-icon">📱</div>
+  <h1>BayArea Home Finder</h1>
+  <p>Find your perfect Bay Area home by chatting with Maya, your AI real estate assistant. Powered by live MLS data.</p>
+  <a href="https://apps.apple.com/app/id YOUR_APP_STORE_ID" class="app-store-btn" id="appStoreBtn">
+    <!-- Apple logo SVG -->
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+    Download on the App Store
+  </a>
+</div>
+
+<div class="content">
+
+  <!-- ── Features ── -->
+  <div class="features">
+    <div class="feature-card">
+      <div class="feature-icon">💬</div>
+      <h3>Just Tell Maya What You Want</h3>
+      <p>Describe your ideal home in plain English — budget, bedrooms, neighbourhood, schools. Maya searches live MLS listings and presents the best matches.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <h3>Live MLS Data</h3>
+      <p>Every listing is pulled directly from the MLS and updated throughout the day. You'll always see what's actually available, not cached old data.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🏫</div>
+      <h3>School Ratings Built In</h3>
+      <p>Ask about schools and Maya will tell you about the district and ratings for any Bay Area city — no separate research needed.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📅</div>
+      <h3>Book a Showing in Seconds</h3>
+      <p>Found something you love? Maya can schedule a showing with Roozbeh directly from the conversation — no phone tag required.</p>
+    </div>
+  </div>
+
+  <!-- ── Download / QR code ── -->
+  <div class="download-section">
+    <div class="qr-wrap">
+      <div id="qrcode"></div>
+      <div class="qr-label">Scan to download</div>
+    </div>
+    <div class="download-text">
+      <h2>Available free on the App Store</h2>
+      <p>
+        iPhone users can scan the QR code or tap the button below.
+        The app is free to download — no subscription, no credit card.
+      </p>
+      <div class="badge-row">
+        <span class="badge-pill">📱 iPhone</span>
+        <span class="badge-pill">🆓 Free</span>
+        <span class="badge-pill">🗺 Bay Area MLS</span>
+        <span class="badge-pill">🤖 AI-Powered</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Cities ── -->
+  <div class="cities-section">
+    <h2>Browse by City</h2>
+    <div class="city-chips">
+      {% set cities = [
+        ('San Mateo',   'san-mateo'),
+        ('Sunnyvale',   'sunnyvale'),
+        ('Palo Alto',   'palo-alto'),
+        ('Santa Clara', 'santa-clara'),
+        ('Redwood City','redwood-city'),
+        ('Mountain View','mountain-view'),
+        ('Foster City', 'foster-city'),
+        ('San Jose',    'san-jose'),
+        ('Milpitas',    'milpitas'),
+        ('Fremont',     'fremont'),
+        ('Newark',      'newark'),
+        ('Union City',  'union-city'),
+        ('Belmont',     'belmont'),
+        ('San Carlos',  'san-carlos'),
+        ('Menlo Park',  'menlo-park'),
+        ('Los Altos',   'los-altos'),
+        ('Cupertino',   'cupertino'),
+        ('Campbell',    'campbell'),
+        ('Los Gatos',   'los-gatos'),
+      ] %}
+      {% for name, slug in cities %}
+      <a href="/homes-for-sale/{{ slug }}" class="city-chip">{{ name }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <p>
+    By <a href="/about">Roozbeh Zabihollahi</a> · DRE# 02225608 ·
+    <a href="/privacy_policy">Privacy Policy</a> ·
+    <a href="/support">Support</a>
+  </p>
+</footer>
+
+<!-- QR code generator (vanilla JS, no server needed) -->
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+  // Replace YOUR_APP_STORE_ID with your actual App Store numeric ID
+  const APP_STORE_URL = 'https://apps.apple.com/app/idYOUR_APP_STORE_ID';
+
+  // Update the App Store button href
+  document.getElementById('appStoreBtn').href = APP_STORE_URL;
+
+  // Generate QR code
+  new QRCode(document.getElementById('qrcode'), {
+    text:           APP_STORE_URL,
+    width:          148,
+    height:         148,
+    colorDark:      '#092a56',
+    colorLight:     '#ffffff',
+    correctLevel:   QRCode.CorrectLevel.M,
+  });
+</script>
+
+</body>
+</html>

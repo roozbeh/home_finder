@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Homes for Sale in {{ city_title }} | iPronto{% endblock %}
+
+{% block og_tags %}
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ai.roozbeh.realtor/homes-for-sale/{{ city_slug }}">
+<meta property="og:title" content="Homes for Sale in {{ city_title }}, CA — iPronto">
+<meta property="og:description" content="{{ count }} home{% if count != 1 %}s{% endif %} currently for sale in {{ city_title }}{% if min_price %}, from ${{ '{:,.0f}'.format(min_price) }}{% endif %}. Search with Maya, your AI real estate assistant.">
+{% endblock %}
+
+{% block head %}
+<meta name="description" content="{{ count }} home{% if count != 1 %}s{% endif %} for sale in {{ city_title }}, CA. Browse current MLS listings{% if min_price and max_price %} priced from ${{ '{:,.0f}'.format(min_price) }} to ${{ '{:,.0f}'.format(max_price) }}{% endif %}. Chat with Maya to find your perfect match.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SearchResultsPage",
+  "name": "Homes for Sale in {{ city_title }}, CA",
+  "url": "https://ai.roozbeh.realtor/homes-for-sale/{{ city_slug }}",
+  "description": "{{ count }} homes for sale in {{ city_title }}, California"
+}
+</script>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Hero ── -->
+<div class="rounded-3 mb-4 px-4 py-4" style="background: linear-gradient(135deg, #092a56 0%, #1a4a8a 100%); color: #fff;">
+  <div class="row align-items-center">
+    <div class="col-12 col-md-8">
+      <h1 class="fw-bold mb-1" style="font-size:1.65rem;">
+        Homes for Sale in {{ city_title }}, CA
+      </h1>
+      <p class="mb-0" style="opacity:.85;">
+        {% if count > 0 %}
+          {{ count }} active listing{% if count != 1 %}s{% endif %}
+          {% if min_price and max_price %}
+            · ${{ '{:,.0f}'.format(min_price) }}–${{ '{:,.0f}'.format(max_price) }}
+          {% endif %}
+          · Updated daily from MLS
+        {% else %}
+          No active listings right now — new homes are added daily.
+        {% endif %}
+      </p>
+    </div>
+    <div class="col-12 col-md-4 mt-3 mt-md-0 d-flex gap-2 flex-wrap">
+      <a href="/" class="btn btn-light fw-semibold">
+        💬 Ask Maya for Help
+      </a>
+      <a href="/search?city={{ city_slug.upper().replace('-',' ') }}" class="btn btn-outline-light">
+        Filter &amp; Sort
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- ── AI pitch ── -->
+<div class="alert border-0 mb-4" style="background:#f0f4ff;">
+  <div class="d-flex align-items-start gap-3">
+    <span style="font-size:1.6rem;line-height:1;">🏠</span>
+    <div>
+      <strong>Search smarter with Maya</strong>
+      <p class="mb-0 small text-muted">
+        Tell Maya what you're looking for — budget, bedrooms, neighbourhood vibe — and she'll
+        search live MLS data and present the best matches. No forms, just a conversation.
+        <a href="/" class="fw-semibold" style="color:#092a56;">Start chatting →</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Listings grid ── -->
+{% if listings %}
+<div class="row g-3 mb-5">
+  {% for listing in listings %}
+  <div class="col-12 col-sm-6 col-lg-4">
+    <div class="card h-100" style="border:none;box-shadow:0 1px 6px rgba(0,0,0,.08);">
+
+      <!-- Photo -->
+      {% set photos = listing.get('photos') or [] %}
+      {% set thumb  = listing.get('thumbphoto') or (photos[0] if photos else None) %}
+      {% if thumb %}
+      <a href="/listing/{{ listing.LISTING_ID }}">
+        <img src="{{ thumb }}" alt="{{ listing.STREET_ADDRESS }}"
+             class="card-img-top"
+             style="height:180px;object-fit:cover;"
+             onerror="this.style.display='none'">
+      </a>
+      {% else %}
+      <div style="height:180px;background:linear-gradient(135deg,#092a56,#1a4a8a);
+                  display:flex;align-items:center;justify-content:center;font-size:2.5rem;">🏠</div>
+      {% endif %}
+
+      <div class="card-body">
+        <!-- Price + status -->
+        <div class="d-flex justify-content-between align-items-start mb-1">
+          <span class="fw-bold fs-5" style="color:#092a56;">
+            {% if listing.LIST_PRICE %}${{ '{:,.0f}'.format(listing.LIST_PRICE) }}{% else %}—{% endif %}
+          </span>
+          <span class="badge badge-{{ listing.MLS_STATUS }} ms-2">{{ listing.MLS_STATUS }}</span>
+        </div>
+
+        <!-- Address -->
+        <p class="mb-1 small text-muted">
+          {{ listing.STREET_ADDRESS or '—' }}, {{ listing.CITY|title }}
+        </p>
+
+        <!-- Stats -->
+        <div class="d-flex gap-3 small text-secondary mb-3">
+          {% if listing.BEDROOMS_TOTAL %}
+          <span>🛏 {{ listing.BEDROOMS_TOTAL|int }} bd</span>
+          {% endif %}
+          {% if listing.BATHS_DISPLAY or listing.BATHROOMS_FULL %}
+          <span>🚿 {{ listing.BATHS_DISPLAY or listing.BATHROOMS_FULL }} ba</span>
+          {% endif %}
+          {% if listing.SQFT %}
+          <span>📐 {{ '{:,.0f}'.format(listing.SQFT) }} sqft</span>
+          {% endif %}
+        </div>
+
+        <a href="/listing/{{ listing.LISTING_ID }}" class="btn btn-sm w-100"
+           style="background:#092a56;color:#fff;">View Details</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <div style="font-size:3rem;">🏠</div>
+  <p class="mt-2">No active listings in {{ city_title }} right now.</p>
+  <a href="/" class="btn btn-primary mt-2" style="background:#092a56;border:none;">
+    Ask Maya — she searches all Bay Area cities
+  </a>
+</div>
+{% endif %}
+
+<!-- ── CTA: Download the app ── -->
+<div class="rounded-3 p-4 mb-4 text-center" style="background:#092a56;color:#fff;">
+  <h2 class="fw-bold mb-2" style="font-size:1.3rem;">
+    Get alerts when new homes hit the market in {{ city_title }}
+  </h2>
+  <p style="opacity:.8;max-width:480px;margin:0 auto 20px;">
+    Download the BayArea Home Finder app and let Maya notify you the moment a
+    matching listing appears — before it's gone.
+  </p>
+  <a href="/get-the-app" class="btn btn-light fw-semibold px-4">
+    📱 Download the App
+  </a>
+</div>
+
+<!-- ── Breadcrumb / schema ── -->
+<nav aria-label="breadcrumb" class="mb-4">
+  <ol class="breadcrumb small">
+    <li class="breadcrumb-item"><a href="/">iPronto</a></li>
+    <li class="breadcrumb-item active">Homes for Sale in {{ city_title }}</li>
+  </ol>
+</nav>
+
+{% endblock %}
