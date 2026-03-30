@@ -5,35 +5,48 @@ iPronto social content generator.
 Pulls live data from your MLS database and uses Claude to draft
 ready-to-post content for Reddit, Instagram, and blog posts.
 
-Usage:
-    python scripts/generate_social_content.py reddit
-    python scripts/generate_social_content.py instagram
-    python scripts/generate_social_content.py blog
-    python scripts/generate_social_content.py all
+Usage (Docker — recommended):
+    docker-compose run --rm marketing all
+    docker-compose run --rm marketing reddit
+    docker-compose run --rm marketing instagram
+    docker-compose run --rm marketing blog
 
-Output is printed to stdout and also saved to scripts/output/
-so you can review, edit, and post when ready.
+Usage (local):
+    cd data_service/marketing
+    python generate_social_content.py all
 
-Requirements:
-    pip install pymongo anthropic python-dotenv
+Output is saved to marketing/output/ and printed to stdout.
+Review, edit if needed, then post.
 """
 
 import os
 import sys
-import json
 import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from dotenv import load_dotenv
+# Load .env / env file for local development.
+# In Docker, variables are injected by docker-compose env_file — no file needed.
+try:
+    from dotenv import load_dotenv
+    for _candidate in [
+        Path(".env"),
+        Path("env"),
+        Path("../env"),
+        Path("../../data_service/env"),
+    ]:
+        if _candidate.exists():
+            load_dotenv(dotenv_path=_candidate)
+            break
+    else:
+        load_dotenv()
+except ImportError:
+    pass  # running in Docker with env already injected
+
 from pymongo import MongoClient
 import anthropic
 
 # ── Config ────────────────────────────────────────────────────────────────────
-
-# Load env from data_service/env (same file the app uses)
-env_path = Path(__file__).parent.parent / "data_service" / "env"
-load_dotenv(dotenv_path=env_path)
 
 MONGO_URI     = os.environ["MONGO_URI"]
 MONGO_DB      = os.environ.get("MONGO_DB", "mls")
@@ -45,7 +58,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def get_db():
-    client = MongoClient(MONGO_URI, connect=True, serverSelectionTimeoutMS=5000)
+    client = MongoClient(MONGO_URI, connect=True, serverSelectionTimeoutMS=8000)
     return client[MONGO_DB]
 
 
@@ -53,38 +66,32 @@ def gather_market_stats(db) -> dict:
     """Pull a snapshot of interesting MLS stats for content generation."""
     now       = datetime.now(timezone.utc)
     week_ago  = now - timedelta(days=7)
-    month_ago = now - timedelta(days=30)
 
     active_filter  = {"MLS_STATUS": {"$in": ["ACTV", "NEW", "AC"]}}
     new_filter     = {"MLS_STATUS": "NEW"}
     pending_filter = {"MLS_STATUS": {"$in": ["PCH", "CS"]}}
 
-    # Counts
     active_count  = db.mls_listings.count_documents(active_filter)
     new_count     = db.mls_listings.count_documents(new_filter)
     pending_count = db.mls_listings.count_documents(pending_filter)
 
-    # Price stats across active listings
     price_pipeline = [
         {"$match": {**active_filter, "LIST_PRICE": {"$gt": 0}}},
         {"$group": {
-            "_id":    None,
-            "avg":    {"$avg": "$LIST_PRICE"},
-            "median": {"$avg": "$LIST_PRICE"},   # approximation
-            "min":    {"$min": "$LIST_PRICE"},
-            "max":    {"$max": "$LIST_PRICE"},
+            "_id": None,
+            "avg": {"$avg": "$LIST_PRICE"},
+            "min": {"$min": "$LIST_PRICE"},
+            "max": {"$max": "$LIST_PRICE"},
         }},
     ]
     price_stats = next(iter(db.mls_listings.aggregate(price_pipeline)), {})
 
-    # Days on market for active listings
     dom_pipeline = [
         {"$match": {**active_filter, "DAYS_ON_MARKET": {"$gt": 0}}},
         {"$group": {"_id": None, "avg_dom": {"$avg": "$DAYS_ON_MARKET"}}},
     ]
     dom_stats = next(iter(db.mls_listings.aggregate(dom_pipeline)), {})
 
-    # Top cities by active listing count
     city_pipeline = [
         {"$match": active_filter},
         {"$group": {"_id": "$CITY", "count": {"$sum": 1}}},
@@ -97,7 +104,6 @@ def gather_market_stats(db) -> dict:
         if r.get("_id")
     ]
 
-    # Most affordable active listing
     affordable = db.mls_listings.find_one(
         {**active_filter, "LIST_PRICE": {"$gt": 500_000}},
         {"STREET_ADDRESS": 1, "CITY": 1, "LIST_PRICE": 1,
@@ -105,7 +111,6 @@ def gather_market_stats(db) -> dict:
         sort=[("LIST_PRICE", 1)],
     )
 
-    # Newest listing
     newest = db.mls_listings.find_one(
         new_filter,
         {"STREET_ADDRESS": 1, "CITY": 1, "LIST_PRICE": 1,
@@ -114,7 +119,6 @@ def gather_market_stats(db) -> dict:
         sort=[("_updated_at", -1)],
     )
 
-    # Price reductions this week
     price_cuts = db.mls_listings.count_documents({
         "MLS_STATUS": {"$in": ["ACTV", "AC"]},
         "_history": {"$elemMatch": {
@@ -124,18 +128,18 @@ def gather_market_stats(db) -> dict:
     })
 
     return {
-        "date":           now.strftime("%B %d, %Y"),
-        "active_count":   active_count,
-        "new_count":      new_count,
-        "pending_count":  pending_count,
-        "avg_price":      int(price_stats.get("avg", 0)),
-        "min_price":      int(price_stats.get("min", 0)),
-        "max_price":      int(price_stats.get("max", 0)),
-        "avg_dom":        round(dom_stats.get("avg_dom", 0), 1),
-        "top_cities":     top_cities,
+        "date":            now.strftime("%B %d, %Y"),
+        "active_count":    active_count,
+        "new_count":       new_count,
+        "pending_count":   pending_count,
+        "avg_price":       int(price_stats.get("avg", 0)),
+        "min_price":       int(price_stats.get("min", 0)),
+        "max_price":       int(price_stats.get("max", 0)),
+        "avg_dom":         round(dom_stats.get("avg_dom", 0), 1),
+        "top_cities":      top_cities,
         "price_cuts_week": price_cuts,
-        "affordable":     affordable,
-        "newest":         newest,
+        "affordable":      affordable,
+        "newest":          newest,
     }
 
 
@@ -149,8 +153,8 @@ def pick_featured_listing(db) -> dict | None:
         },
         {"STREET_ADDRESS": 1, "CITY": 1, "LIST_PRICE": 1,
          "BEDROOMS_TOTAL": 1, "BATHS_DISPLAY": 1, "BATHROOMS_FULL": 1,
-         "SQFT": 1, "LISTING_ID": 1, "thumbphoto": 1, "YEAR_BUILT": 1,
-         "LOT_SQFT": 1, "DAYS_ON_MARKET": 1},
+         "SQFT": 1, "LISTING_ID": 1, "thumbphoto": 1,
+         "YEAR_BUILT": 1, "LOT_SQFT": 1, "DAYS_ON_MARKET": 1},
         sort=[("_updated_at", -1)],
         limit=20,
     ))
@@ -194,7 +198,7 @@ def generate_reddit_post(stats: dict) -> str:
         beds  = affordable.get("BEDROOMS_TOTAL")
         affordable_line = (
             f"\nMost affordable active listing right now: "
-            f"{beds}bd in {city} at ${price:,.0f}."
+            f"{int(beds) if beds else '?'}bd in {city} at ${price:,.0f}."
         )
 
     prompt = f"""Write a Reddit post (for r/bayarea or r/SFBayHousing) sharing this week's Bay Area housing market data.
@@ -210,10 +214,10 @@ LIVE DATA — week of {stats['date']}:
 
 Rules:
 - Write a compelling Reddit title (no clickbait)
-- Body should be 150-250 words: share the data naturally, add 2-3 sentences of honest insight
-- End with one low-key mention of iPronto (https://ai.roozbeh.realtor) as the tool used to pull this data
+- Body: 150–250 words, share the data naturally, add 2–3 sentences of honest insight
+- End with one low-key mention of iPronto (https://ai.roozbeh.realtor) as the source
 - Do NOT sound like an ad
-- Format: TITLE: ...\n\nBODY: ...
+- Format output as:  TITLE: ...\n\nBODY: ...
 """
     return call_claude(prompt, SYSTEM_VOICE)
 
@@ -243,15 +247,15 @@ Listing details:
 Address: {addr}, {city}
 URL: https://ai.roozbeh.realtor/listing/{lid}
 
-Market context: There are currently {stats['active_count']} active listings in the Bay Area.
+Market context: {stats['active_count']} active Bay Area listings right now.
 Average days on market: {stats['avg_dom']} days.
 
 Rules:
-- 3-5 lines max
-- Start with the key stats (emoji format: 📍 💰 🛏 🚿 📐)
+- 3–5 lines max
+- Start with key stats using emojis (📍 💰 🛏 🚿 📐)
 - One line of genuine insight about this listing or the local market
 - End with "Chat with Maya to find similar homes → ai.roozbeh.realtor"
-- Then 8-10 relevant hashtags on the last line
+- Last line: 8–10 relevant hashtags
 - Do NOT use "dream home", "stunning", "gorgeous", or similar clichés
 """
     return call_claude(prompt, SYSTEM_VOICE)
@@ -262,7 +266,7 @@ def generate_blog_post(stats: dict) -> str:
         f"  - {c['city']}: {c['count']} active listings"
         for c in stats["top_cities"]
     )
-    prompt = f"""Write a 500-700 word blog post about the current Bay Area housing market.
+    prompt = f"""Write a 500–700 word blog post about the current Bay Area housing market.
 
 LIVE DATA — {stats['date']}:
 - Active listings: {stats['active_count']}
@@ -274,12 +278,12 @@ LIVE DATA — {stats['date']}:
 {top_cities_str}
 
 Rules:
-- Write a punchy SEO-friendly title and subtitle
-- Include the real data naturally — don't just list numbers, explain what they mean for buyers
-- Add 2-3 actionable tips for Bay Area buyers based on current conditions
+- Punchy SEO-friendly title and subtitle
+- Use the real data naturally — explain what numbers mean for buyers
+- Add 2–3 actionable tips based on current conditions
 - End with a paragraph mentioning iPronto (https://ai.roozbeh.realtor) and Roozbeh as the author
-- Tone: expert but plain-spoken — no jargon, no fluff
-- Format: TITLE:\nSUBTITLE:\n\n[body paragraphs with ## subheadings]
+- Plain-spoken — no jargon, no fluff
+- Format: TITLE:\nSUBTITLE:\n\n[body with ## subheadings]
 """
     return call_claude(prompt, SYSTEM_VOICE)
 
@@ -293,7 +297,7 @@ def save_and_print(content: str, content_type: str):
 
     divider = "─" * 60
     print(f"\n{divider}")
-    print(f"  {content_type.upper()}  —  saved to {filename.name}")
+    print(f"  {content_type.upper()}  —  saved to output/{filename.name}")
     print(divider)
     print(content)
     print(divider + "\n")
@@ -304,39 +308,35 @@ def save_and_print(content: str, content_type: str):
 def main():
     mode = sys.argv[1].lower() if len(sys.argv) > 1 else "all"
     if mode not in ("reddit", "instagram", "blog", "all"):
-        print("Usage: python generate_social_content.py [reddit|instagram|blog|all]")
+        print("Usage: generate_social_content.py [reddit|instagram|blog|all]")
         sys.exit(1)
 
-    print("Connecting to database...")
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] Connecting to database...")
     db    = get_db()
     stats = gather_market_stats(db)
 
-    print(f"Pulled live stats: {stats['active_count']} active listings, "
-          f"avg ${stats['avg_price']:,.0f}, {stats['avg_dom']} days on market")
+    print(f"Live stats: {stats['active_count']} active listings · "
+          f"avg ${stats['avg_price']:,.0f} · {stats['avg_dom']} days on market")
 
     if mode in ("reddit", "all"):
         print("\nGenerating Reddit post...")
-        post = generate_reddit_post(stats)
-        save_and_print(post, "reddit")
+        save_and_print(generate_reddit_post(stats), "reddit")
 
     if mode in ("instagram", "all"):
         print("\nPicking featured listing for Instagram...")
         listing = pick_featured_listing(db)
         if listing:
-            city = (listing.get("CITY") or "").title()
-            addr = listing.get("STREET_ADDRESS", "")
-            print(f"Selected: {addr}, {city}")
-            caption = generate_instagram_caption(listing, stats)
-            save_and_print(caption, "instagram")
+            print(f"Selected: {listing.get('STREET_ADDRESS')}, "
+                  f"{(listing.get('CITY') or '').title()}")
+            save_and_print(generate_instagram_caption(listing, stats), "instagram")
         else:
-            print("No suitable listing found for Instagram (need photos + active status).")
+            print("No suitable listing found (need photos + active status).")
 
     if mode in ("blog", "all"):
         print("\nGenerating blog post...")
-        post = generate_blog_post(stats)
-        save_and_print(post, "blog")
+        save_and_print(generate_blog_post(stats), "blog")
 
-    print("Done. Review the output above, edit as needed, then post.")
+    print("Done. Review output above, edit as needed, then post.")
 
 
 if __name__ == "__main__":
