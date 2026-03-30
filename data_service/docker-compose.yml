@@ -41,6 +41,29 @@ services:
     volumes:
       - app_data:/app/data
 
+  # ── Marketing content generator ───────────────────────────────────────────
+  # Generates Reddit posts, Instagram captions, and blog post drafts using
+  # live MLS data + Claude. Run on demand — does not stay up.
+  #
+  # Generate all content types:
+  #   docker-compose run --rm marketing
+  #
+  # Generate one type:
+  #   docker-compose run --rm marketing reddit
+  #   docker-compose run --rm marketing instagram
+  #   docker-compose run --rm marketing blog
+  #
+  # Output is saved to marketing/output/ on the host.
+  marketing:
+    build:
+      context: ./marketing
+      dockerfile: Dockerfile
+    container_name: mls_marketing
+    env_file:
+      - env
+    volumes:
+      - ./marketing/output:/app/output   # drafts land here on the host
+
   # ── Flask web server (listings browser) ───────────────────────────────────
   web:
     build:

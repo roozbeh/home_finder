@@ -1,5 +1,47 @@
 {% extends "base.html" %}
-{% block title %}{{ listing.LISTING_ID }} — {{ listing.STREET_ADDRESS }}{% endblock %}
+{% block title %}{{ listing.STREET_ADDRESS }}, {{ listing.CITY|title }} — ${{ '{:,.0f}'.format(listing.LIST_PRICE) if listing.LIST_PRICE else 'For Sale' }} | iPronto{% endblock %}
+
+{% block og_tags %}
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ai.roozbeh.realtor/listing/{{ listing.LISTING_ID }}">
+<meta property="og:title" content="{{ listing.STREET_ADDRESS }} — ${{ '{:,.0f}'.format(listing.LIST_PRICE) if listing.LIST_PRICE else 'For Sale' }}">
+<meta property="og:description" content="{{ listing.BEDROOMS_TOTAL or '' }}bd {{ listing.BATHS_DISPLAY or listing.BATHROOMS_FULL or '' }}ba{% if listing.SQFT %}, {{ '{:,.0f}'.format(listing.SQFT) }} sqft{% endif %} in {{ listing.CITY|title }}, CA. View on iPronto.">
+{% if listing.get('photos') %}<meta property="og:image" content="{{ listing.photos[0] }}">{% endif %}
+{% endblock %}
+
+{% block app_banner_arg %}app-id=YOUR_APP_STORE_ID, app-argument=https://ai.roozbeh.realtor/listing/{{ listing.LISTING_ID }}{% endblock %}
+
+{% block head %}
+<meta name="description" content="{{ listing.BEDROOMS_TOTAL or '' }}-bedroom home for sale at {{ listing.STREET_ADDRESS }}, {{ listing.CITY|title }}, CA. Listed at ${{ '{:,.0f}'.format(listing.LIST_PRICE) if listing.LIST_PRICE else 'price on request' }}. Search Bay Area homes with iPronto.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "RealEstateListing",
+  "name": "{{ listing.STREET_ADDRESS }}, {{ listing.CITY|title }}",
+  "url": "https://ai.roozbeh.realtor/listing/{{ listing.LISTING_ID }}",
+  "description": "{{ listing.BEDROOMS_TOTAL or '' }} bedroom home for sale in {{ listing.CITY|title }}, Bay Area, CA",
+  "offers": {
+    "@type": "Offer",
+    "price": {{ listing.LIST_PRICE if listing.LIST_PRICE else 'null' }},
+    "priceCurrency": "USD",
+    "availability": "https://schema.org/InStock"
+  },
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "{{ listing.STREET_ADDRESS }}",
+    "addressLocality": "{{ listing.CITY|title }}",
+    "addressRegion": "CA",
+    "addressCountry": "US"
+  }{% if listing.get('photos') %},
+  "image": "{{ listing.photos[0] }}"{% endif %}{% if listing.LATITUDE and listing.LONGITUDE %},
+  "geo": {
+    "@type": "GeoCoordinates",
+    "latitude": {{ listing.LATITUDE }},
+    "longitude": {{ listing.LONGITUDE }}
+  }{% endif %}
+}
+</script>
+{% endblock %}
 
 {% block content %}
 <div class="mb-3">
