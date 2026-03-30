@@ -2,6 +2,12 @@
 
 A living document. Update statuses as you complete tasks.
 
+**How to mark a task done:** change `[ ]` to `[x]`, e.g.:
+```
+- **Status:** [x] Done — 2026-03-30
+```
+GitHub renders these as ticked checkboxes automatically.
+
 ---
 
 ## Overview
