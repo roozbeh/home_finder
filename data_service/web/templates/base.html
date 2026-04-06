@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MLS Listings{% endblock %}</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <!-- Smart App Banner — replace YOUR_APP_STORE_ID with your numeric ID from App Store Connect -->
-  <meta name="apple-itunes-app" content="{% block app_banner_arg %}app-id=YOUR_APP_STORE_ID{% endblock %}">
+  <!-- Smart App Banner — replace 6760952555 with your numeric ID from App Store Connect -->
+  <meta name="apple-itunes-app" content="{% block app_banner_arg %}app-id=6760952555{% endblock %}">
   <!-- Open Graph defaults (overridden per page) -->
   <meta property="og:site_name" content="iPronto">
   <meta property="og:type" content="website">
@@ -95,6 +95,27 @@
   </style>
 </head>
 <body>
+
+  <!-- ── App Download Banner ── -->
+  <div id="appBanner" style="display:none;background:#092a56;color:#fff;padding:10px 16px;align-items:center;gap:12px;font-size:14px;">
+    <img src="/static/favicon.png" style="width:36px;height:36px;border-radius:8px;flex-shrink:0;" alt="BayArea Home Finder">
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:.9rem;">BayArea Home Finder</div>
+      <div style="font-size:.75rem;opacity:.7;">Find your home with AI · Free on the App Store</div>
+    </div>
+    <a href="/get-the-app" style="background:#fff;color:#092a56;padding:6px 16px;border-radius:20px;font-weight:700;font-size:.82rem;text-decoration:none;white-space:nowrap;flex-shrink:0;">Get the App</a>
+    <button onclick="dismissAppBanner()" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:20px;padding:0 0 0 4px;cursor:pointer;line-height:1;flex-shrink:0;">✕</button>
+  </div>
+  <script>
+    function dismissAppBanner() {
+      document.getElementById('appBanner').style.display = 'none';
+      localStorage.setItem('appBannerDismissed', '1');
+    }
+    if (!localStorage.getItem('appBannerDismissed')) {
+      document.getElementById('appBanner').style.display = 'flex';
+    }
+  </script>
+
   <nav class="navbar navbar-dark mb-4">
     <div class="container-fluid px-4">
       <a class="navbar-brand fw-bold fs-5" href="/">🏠 iPronto</a>

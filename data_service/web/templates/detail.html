@@ -9,7 +9,7 @@
 {% if listing.get('photos') %}<meta property="og:image" content="{{ listing.photos[0] }}">{% endif %}
 {% endblock %}
 
-{% block app_banner_arg %}app-id=YOUR_APP_STORE_ID, app-argument=https://ai.roozbeh.realtor/listing/{{ listing.LISTING_ID }}{% endblock %}
+{% block app_banner_arg %}app-id=6760952555, app-argument=https://ai.roozbeh.realtor/listing/{{ listing.LISTING_ID }}{% endblock %}
 
 {% block head %}
 <meta name="description" content="{{ listing.BEDROOMS_TOTAL or '' }}-bedroom home for sale at {{ listing.STREET_ADDRESS }}, {{ listing.CITY|title }}, CA. Listed at ${{ '{:,.0f}'.format(listing.LIST_PRICE) if listing.LIST_PRICE else 'price on request' }}. Search Bay Area homes with iPronto.">
