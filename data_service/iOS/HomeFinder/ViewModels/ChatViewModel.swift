@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import UIKit
 import AuthenticationServices
+import StoreKit
 
 @MainActor
 final class ChatViewModel: ObservableObject {
@@ -101,6 +102,11 @@ final class ChatViewModel: ObservableObject {
                             Task { await UIApplication.shared.open(AppConfig.calendlyURL) }
                         }
 
+                        // Track engagement for review prompt
+                        let sent = UserDefaults.standard.integer(forKey: "totalMessagesSent") + 1
+                        UserDefaults.standard.set(sent, forKey: "totalMessagesSent")
+                        if sent >= 3 { requestReviewIfEligible() }
+
                     case "error":
                         let errText = event["text"] as? String ?? "Unknown error"
                         removeMessage(id: textId)
@@ -129,6 +135,23 @@ final class ChatViewModel: ObservableObject {
             await client.postFeedback(listingId: listingId, vote: vote,
                                       sessionId: sessionId, userId: uid)
         }
+        // A thumbs-up is a strong positive signal — good time to ask for a review
+        if vote == .good { requestReviewIfEligible() }
+    }
+
+    // MARK: - Review prompt
+
+    private func requestReviewIfEligible() {
+        let lastKey = "lastReviewRequestDate"
+        let now     = Date()
+        // Respect Apple's guideline: don't ask more than once per 90 days
+        if let last = UserDefaults.standard.object(forKey: lastKey) as? Date,
+           now.timeIntervalSince(last) < 90 * 24 * 3600 { return }
+        guard let windowScene = UIApplication.shared.connectedScenes
+            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
+        else { return }
+        SKStoreReviewController.requestReview(in: windowScene)
+        UserDefaults.standard.set(now, forKey: lastKey)
     }
 
     // MARK: - New chat

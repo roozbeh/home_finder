@@ -51,9 +51,18 @@ struct ListingCardView: View {
 
                 if let id = listing.listingId,
                    let url = URL(string: "\(AppConfig.baseURL)/listing/\(id)") {
-                    Link("View full details →", destination: url)
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(UIColor.tertiaryLabel))
+                    HStack {
+                        Link("View full details →", destination: url)
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(UIColor.tertiaryLabel))
+                        Spacer()
+                        let shareText = "\(listing.formattedPrice) · \([listing.streetAddress, listing.formattedCity].compactMap { $0 }.joined(separator: ", "))"
+                        ShareLink(item: url, subject: Text(listing.streetAddress ?? "Home for Sale"), message: Text(shareText)) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 13))
+                                .foregroundColor(Color(UIColor.tertiaryLabel))
+                        }
+                    }
                 }
             }
             .padding(12)
