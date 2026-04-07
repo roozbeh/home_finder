@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MLS Listings{% endblock %}</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <!-- Smart App Banner — replace 6760952555 with your numeric ID from App Store Connect -->
   <meta name="apple-itunes-app" content="{% block app_banner_arg %}app-id=6760952555{% endblock %}">
   <!-- Open Graph defaults (overridden per page) -->
@@ -149,6 +151,14 @@
       </div>
       <div id="loginError" style="display:none;color:#c0392b;font-size:.85rem;margin-bottom:12px;"></div>
       <button class="login-btn-primary" onclick="submitLogin()">Continue →</button>
+      {% if google_client_id %}
+      <div style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;">
+        <div style="flex:1;height:1px;background:#e5e7eb;"></div>
+        <span style="font-size:.78rem;color:#999;">or</span>
+        <div style="flex:1;height:1px;background:#e5e7eb;"></div>
+      </div>
+      <div id="googleSignInBtn" style="display:flex;justify-content:center;"></div>
+      {% endif %}
       <button class="login-btn-skip" onclick="closeLoginModal()">Maybe later</button>
     </div>
   </div>
@@ -264,5 +274,40 @@
     // Init — restore session
     updateUserUI(getUser());
   </script>
+
+  {% if google_client_id %}
+  <script>
+    async function handleGoogleSignIn(credentialResponse) {
+      const errEl = document.getElementById('loginError');
+      try {
+        const res  = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id_token: credentialResponse.credential }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        localStorage.setItem('iprontoUser', JSON.stringify(data));
+        closeLoginModal();
+        updateUserUI(data);
+        if (_loginCallback) { _loginCallback(); _loginCallback = null; }
+      } catch (e) {
+        if (errEl) { errEl.textContent = 'Google sign-in failed. Please try again.'; errEl.style.display = 'block'; }
+      }
+    }
+
+    window.addEventListener('load', () => {
+      if (typeof google === 'undefined' || !document.getElementById('googleSignInBtn')) return;
+      google.accounts.id.initialize({
+        client_id: '{{ google_client_id }}',
+        callback:  handleGoogleSignIn,
+      });
+      google.accounts.id.renderButton(document.getElementById('googleSignInBtn'), {
+        type: 'standard', theme: 'outline', size: 'large', width: 280,
+        text: 'signin_with', shape: 'rectangular', logo_alignment: 'left',
+      });
+    });
+  </script>
+  {% endif %}
 </body>
 </html>

@@ -11,6 +11,9 @@ from flask import Flask, render_template, request, jsonify, Response, stream_wit
 from pymongo import MongoClient
 import anthropic
 
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
+
 from agentic.agent import run_agent, run_agent_streaming
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -21,14 +24,20 @@ ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 CALENDLY_URL   = "https://calendly.com/ruzbeh-o0w7/new-meeting"
 PAGE_SIZE      = 10
 SECRET_KEY     = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
+ADMIN_USERNAME    = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD    = os.environ.get("ADMIN_PASSWORD", "changeme")
+GOOGLE_CLIENT_ID  = os.environ.get("GOOGLE_CLIENT_ID", "")
 
 app            = Flask(__name__)
 app.secret_key = SECRET_KEY
 mongo          = MongoClient(MONGO_URI, connect=False)
 db             = mongo[MONGO_DB]
 ai             = anthropic.Anthropic(api_key=ANTHROPIC_KEY) if ANTHROPIC_KEY else None
+
+
+@app.context_processor
+def inject_google_client_id():
+    return {"google_client_id": GOOGLE_CLIENT_ID}
 
 
 def admin_required(f):
@@ -347,6 +356,59 @@ def api_auth_delete_account():
     db.chat_sessions.update_many({"user_id": user_id}, {"$set": {"user_id": deleted_id}})
     logging.info("[auth] account deleted user_id=%s → %s", user_id, deleted_id)
     return jsonify({"ok": True})
+
+
+@app.route("/api/auth/google", methods=["POST"])
+def api_auth_google():
+    if not GOOGLE_CLIENT_ID:
+        return jsonify({"error": "Google Sign-In not configured on server"}), 500
+
+    data     = request.get_json(force=True)
+    token    = (data.get("id_token") or "").strip()
+    name_hint = (data.get("name") or "").strip()   # sent by iOS; web gets it from the token
+    if not token:
+        return jsonify({"error": "id_token required"}), 400
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            token, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+    except ValueError as exc:
+        logging.warning("[auth/google] token verification failed: %s", exc)
+        return jsonify({"error": "Invalid Google token"}), 401
+
+    google_user_id = idinfo["sub"]
+    email = (idinfo.get("email") or "").lower()
+    name  = idinfo.get("name") or name_hint or "Google User"
+
+    # Look up existing account — by google_user_id first, then email
+    user = db.users.find_one({"google_user_id": google_user_id, "is_deleted": {"$ne": True}})
+    if user is None and email:
+        user = db.users.find_one({"email": email, "is_deleted": {"$ne": True}})
+
+    if user is None:
+        user_id = str(uuid.uuid4())
+        db.users.insert_one({
+            "user_id":        user_id,
+            "name":           name,
+            "email":          email,
+            "google_user_id": google_user_id,
+            "created_at":     datetime.now(timezone.utc),
+        })
+    else:
+        user_id = user["user_id"]
+        update  = {}
+        if not user.get("google_user_id"):
+            update["google_user_id"] = google_user_id
+        if email and not user.get("email"):
+            update["email"] = email
+        if update:
+            db.users.update_one({"user_id": user_id}, {"$set": update})
+        email = email or user.get("email", "")
+        name  = name  or user.get("name", "")
+
+    logging.info("[auth/google] login user_id=%s email=%s", user_id, email)
+    return jsonify({"user_id": user_id, "name": name, "email": email})
 
 
 @app.route("/api/auth/me", methods=["GET"])
