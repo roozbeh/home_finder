@@ -27,6 +27,8 @@ SECRET_KEY     = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-producti
 ADMIN_USERNAME    = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD    = os.environ.get("ADMIN_PASSWORD", "changeme")
 GOOGLE_CLIENT_ID  = os.environ.get("GOOGLE_CLIENT_ID", "")
+# Accept comma-separated list so both iOS and web OAuth client IDs work
+GOOGLE_CLIENT_IDS = [c.strip() for c in GOOGLE_CLIENT_ID.split(",") if c.strip()]
 
 app            = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -37,7 +39,8 @@ ai             = anthropic.Anthropic(api_key=ANTHROPIC_KEY) if ANTHROPIC_KEY els
 
 @app.context_processor
 def inject_google_client_id():
-    return {"google_client_id": GOOGLE_CLIENT_ID}
+    # Pass the first client ID (web) to templates; iOS uses its own native SDK
+    return {"google_client_id": GOOGLE_CLIENT_IDS[0] if GOOGLE_CLIENT_IDS else ""}
 
 
 def admin_required(f):
@@ -360,7 +363,7 @@ def api_auth_delete_account():
 
 @app.route("/api/auth/google", methods=["POST"])
 def api_auth_google():
-    if not GOOGLE_CLIENT_ID:
+    if not GOOGLE_CLIENT_IDS:
         return jsonify({"error": "Google Sign-In not configured on server"}), 500
 
     data     = request.get_json(force=True)
@@ -369,13 +372,19 @@ def api_auth_google():
     if not token:
         return jsonify({"error": "id_token required"}), 400
 
-    try:
-        idinfo = google_id_token.verify_oauth2_token(
-            token, google_requests.Request(), GOOGLE_CLIENT_ID
-        )
-    except ValueError as exc:
-        logging.warning("[auth/google] token verification failed: %s", exc)
-        return jsonify({"error": "Invalid Google token"}), 401
+    idinfo = None
+    last_exc = None
+    for cid in GOOGLE_CLIENT_IDS:
+        try:
+            idinfo = google_id_token.verify_oauth2_token(
+                token, google_requests.Request(), cid
+            )
+            break
+        except ValueError as exc:
+            last_exc = exc
+    if idinfo is None:
+        logging.warning("[auth/google] token verification failed: %s", last_exc)
+        return jsonify({"error": f"Invalid Google token: {last_exc}"}), 401
 
     google_user_id = idinfo["sub"]
     email = (idinfo.get("email") or "").lower()
