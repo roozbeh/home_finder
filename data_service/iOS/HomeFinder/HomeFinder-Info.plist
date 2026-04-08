@@ -13,5 +13,17 @@
 	<array>
 		<integer>1</integer>
 	</array>
+	<!-- Google Sign-In -->
+	<key>GIDClientID</key>
+	<string>1096294149666-btv3qgr9kbem5j3uri7q53elrdlo5076.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.1096294149666-btv3qgr9kbem5j3uri7q53elrdlo5076</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

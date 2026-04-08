@@ -205,6 +205,22 @@ final class ChatViewModel: ObservableObject {
 
     // MARK: - Auth
 
+    func signInWithGoogle(idToken: String, name: String, email: String) {
+        Task {
+            do {
+                let resp = try await client.loginWithGoogle(idToken: idToken, name: name)
+                let user = StoredUser(userId: resp.user_id, name: resp.name,
+                                      email: resp.email, appleUserId: "")
+                user.save()
+                currentUser = user
+                showingLogin = false
+                loadSessions()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     func signInWithApple(credential: ASAuthorizationAppleIDCredential) {
         let appleUserId = credential.user  // stable, always present
         let name  = [credential.fullName?.givenName, credential.fullName?.familyName]

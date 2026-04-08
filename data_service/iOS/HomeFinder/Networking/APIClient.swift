@@ -114,6 +114,29 @@ struct APIClient {
         return try JSONDecoder().decode(AuthResponse.self, from: data)
     }
 
+    func loginWithGoogle(idToken: String, name: String) async throws -> AuthResponse {
+        guard let url = URL(string: "\(baseURL)/api/auth/google") else { throw URLError(.badURL) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(["id_token": idToken, "name": name])
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            if let errResp = try? JSONDecoder().decode([String: String].self, from: data),
+               let msg = errResp["error"] {
+                throw NSError(domain: "API", code: http.statusCode,
+                              userInfo: [NSLocalizedDescriptionKey: msg])
+            }
+            let body = String(data: data, encoding: .utf8) ?? ""
+            let msg  = body.contains("<html") || body.contains("<!DOCTYPE")
+                ? "The server is temporarily unavailable. Please try again in a moment."
+                : (body.isEmpty ? "Unexpected server error (\(http.statusCode))." : String(body.prefix(300)))
+            throw NSError(domain: "API", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+        return try JSONDecoder().decode(AuthResponse.self, from: data)
+    }
+
     func deleteAccount(userId: String) async throws {
         guard let url = URL(string: "\(baseURL)/api/auth/account") else { throw URLError(.badURL) }
         var req = URLRequest(url: url)

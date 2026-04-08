@@ -1,4 +1,5 @@
 import SwiftUI
+import GoogleSignIn
 
 @main
 struct HomeFinderApp: App {
@@ -8,6 +9,9 @@ struct HomeFinderApp: App {
         WindowGroup {
             ChatView()
                 .environmentObject(vm)
+                .onOpenURL { url in
+                    GIDSignIn.sharedInstance.handle(url)
+                }
         }
     }
 }
