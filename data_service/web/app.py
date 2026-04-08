@@ -249,7 +249,7 @@ def api_sessions():
         return jsonify({"error": "user_id required"}), 400
     sessions = list(
         db.chat_sessions
-          .find({"user_id": user_id}, {"_id": 0, "messages": 0})
+          .find({"user_id": user_id}, {"_id": 0, "messages": {"$slice": 3}})
           .sort("updated_at", -1)
           .limit(50)
     )
@@ -257,6 +257,10 @@ def api_sessions():
         for k in ("created_at", "updated_at"):
             if k in s and hasattr(s[k], "isoformat"):
                 s[k] = s[k].isoformat()
+        # Extract first user message as a preview title
+        msgs = s.pop("messages", []) or []
+        first_user = next((m["content"] for m in msgs if m.get("role") == "user"), "")
+        s["preview"] = first_user[:80] if first_user else "Chat session"
     return jsonify(sessions)
 
 
