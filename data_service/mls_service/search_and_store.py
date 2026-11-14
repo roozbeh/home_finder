@@ -22,6 +22,12 @@ import requests
 from datetime import datetime, timezone, timedelta
 
 from pymongo import MongoClient
+from mls_session import (
+    MLSAuthenticationError,
+    assert_authenticated_response,
+    load_active_session,
+    retire_session,
+)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -96,7 +102,6 @@ BAY_AREA_CITIES = [
 
 # How far back the sold/closed search looks.
 SOLD_LOOKBACK_DAYS = 365
-MAX_SESSION_AGE_HOURS = float(os.environ.get("MLS_MAX_SESSION_AGE_HOURS", "12"))
 
 # If a single query returns this many rows the API response is likely
 # truncated (server cap ~5000) — re-run the city in monthly chunks instead.
@@ -181,26 +186,16 @@ def _coerce_types(listing: dict) -> dict:
 
 # ── Data fetching ─────────────────────────────────────────────────────────────
 
-def get_latest_cookies() -> list[dict]:
-    client = MongoClient(MONGO_URI)
-    db     = client[MONGO_DB]
-    doc    = db.auth_tokens.find_one(sort=[("timestamp", -1)])
-    client.close()
-
-    if not doc:
-        raise RuntimeError("No cookies in auth_tokens. Run get_cookies.py first.")
-
-    ts    = doc["timestamp"]
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-    print(f"  Using cookies from {ts.isoformat()} ({age_h:.1f}h ago)")
-    if age_h > MAX_SESSION_AGE_HOURS:
-        raise RuntimeError(
-            f"MLS session is {age_h:.1f}h old (maximum configured age: {MAX_SESSION_AGE_HOURS:.1f}h). "
-            "Renew the authorized session manually; this job will not automate login."
-        )
-    return doc["cookies"]
+def get_active_session() -> dict:
+    """Load a non-retired session without imposing an arbitrary age limit."""
+    doc = load_active_session(MONGO_URI, MONGO_DB)
+    ts = doc.get("timestamp")
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+        print(f"  Using unexpired cookies from {ts.isoformat()} ({age_h:.1f}h ago)")
+    return doc
 
 
 def build_session(cookies: list[dict]) -> requests.Session:
@@ -230,6 +225,7 @@ def fetch_listings(session: requests.Session, payload: dict = None,
         headers={"Content-Type": "application/json;charset=UTF-8"},
         timeout=120,
     )
+    assert_authenticated_response(resp)
     resp.raise_for_status()
     data     = resp.json()
     listings = data.get("data", data) if isinstance(data, dict) else data
@@ -283,6 +279,8 @@ def fetch_sold_listings(session: requests.Session,
                 for row in rows:
                     by_id[row.get("LISTING_ID") or row.get("DCID")] = row
             city_rows = len(rows)
+        except MLSAuthenticationError:
+            raise
         except Exception as exc:
             message = f"{city}: {exc}"
             errors.append(message)
@@ -437,18 +435,24 @@ def main():
 
     print("[1/3] Loading cookies from MongoDB...")
     try:
-        cookies = get_latest_cookies()
+        token = get_active_session()
     except RuntimeError as e:
         print(f"✗ {e}")
         log_run(started_at, time.time() - t0, 0, 0, 0, 0, error=str(e))
         sys.exit(1)
 
-    session = build_session(cookies)
+    session = build_session(token["cookies"])
     active_cities = BAY_AREA_CITIES if args.market == "bay-area" else TARGET_CITIES
     if not args.sold_only:
         print(f"[2/5] Fetching verified active listings (ACTV; {len(active_cities)} {args.market} cities)...")
         try:
             listings = fetch_target_active_listings(session, active_cities, statuses="ACTV")
+        except MLSAuthenticationError as e:
+            retire_session(MONGO_URI, MONGO_DB, token["_id"], str(e))
+            message = f"MLS session rejected and marked expired: {e}"
+            print(f"✗ {message}")
+            log_run(started_at, time.time() - t0, 0, 0, 0, 0, error=message)
+            sys.exit(1)
         except Exception as e:
             print(f"✗ Fetch failed: {e}")
             log_run(started_at, time.time() - t0, 0, 0, 0, 0, error=str(e))
@@ -479,6 +483,13 @@ def main():
             log_run(started_at, time.time() - t1, len(sold), ins, upd, unch,
                     error="; ".join(city_errors) if city_errors else None,
                     run_type="search_sold")
+        except MLSAuthenticationError as e:
+            retire_session(MONGO_URI, MONGO_DB, token["_id"], str(e))
+            message = f"MLS session rejected and marked expired: {e}"
+            print(f"✗ {message}")
+            log_run(started_at, time.time() - t1, 0, 0, 0, 0, error=message,
+                    run_type="search_sold")
+            sys.exit(1)
         except Exception as e:
             print(f"✗ Sold fetch failed: {e}")
             log_run(started_at, time.time() - t1, 0, 0, 0, 0, error=str(e),

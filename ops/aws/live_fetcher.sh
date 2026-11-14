@@ -31,6 +31,7 @@ if ps -ef | grep -q '[f]etch_details.py --active-only'; then
 fi
 
 cd "$DATA_SERVICE_DIR"
+docker cp mls_service/mls_session.py mls_web:/tmp/mls_session.py
 docker cp mls_service/search_and_store.py mls_web:/tmp/search_and_store.py
 docker exec mls_web python /tmp/search_and_store.py --active-only --market bay-area
 

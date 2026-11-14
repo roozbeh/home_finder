@@ -81,7 +81,9 @@
       <div class="status-row"><span class="status-key">Listings fetched</span><span class="status-value">{{ '{:,}'.format(last_refresh.get('fetched', 0)) }}</span></div>
       <div class="status-row"><span class="status-key">Last run changes</span><span class="status-value">{{ '{:,}'.format(last_refresh.get('inserted', 0)) }} new · {{ '{:,}'.format(last_refresh.get('updated', 0)) }} updated · {{ '{:,}'.format(last_refresh.get('unchanged', 0)) }} unchanged</span></div>
       <div class="status-row"><span class="status-key">Run duration</span><span class="status-value">{% if last_refresh.get('duration_s') is not none %}{{ last_refresh.get('duration_s') }} seconds{% else %}—{% endif %}</span></div>
+      <div class="status-row"><span class="status-key">MLS session status</span><span class="status-value {{ 'bad' if session_expired else 'good' }}">{{ session_status }}</span></div>
       <div class="status-row"><span class="status-key">MLS session age</span><span class="status-value {{ 'good' if session_age_minutes is not none and session_age_minutes < 600 else 'warn' }}">{% if session_age_minutes is not none %}{{ session_age_minutes }} minutes{% else %}Unavailable{% endif %}</span></div>
+      {% if session_reason %}<div class="status-row"><span class="status-key">Session failure</span><span class="status-value bad">{{ session_reason }}</span></div>{% endif %}
       <div class="status-row"><span class="status-key">Last run error</span><span class="status-value {{ 'bad' if last_refresh.get('error') else 'good' }}">{{ last_refresh.get('error') or 'None recorded' }}</span></div>
     </section>
   </main>

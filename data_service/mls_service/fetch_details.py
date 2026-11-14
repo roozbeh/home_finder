@@ -24,6 +24,12 @@ import time
 import requests
 from datetime import datetime, timezone
 from pymongo import MongoClient
+from mls_session import (
+    MLSAuthenticationError,
+    assert_authenticated_response,
+    load_active_session,
+    retire_session,
+)
 
 DETAILS_URL_TPL  = (
     "https://bridge.connectmls.com/api/search/listing/details/data"
@@ -32,29 +38,13 @@ DETAILS_URL_TPL  = (
 MONGO_URI        = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB         = os.environ.get("MONGO_DB", "mls")
 RATE_LIMIT_SLEEP = 1.0   # seconds between API calls to avoid rate-limiting
-MAX_SESSION_AGE_HOURS = float(os.environ.get("MLS_MAX_SESSION_AGE_HOURS", "12"))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def get_latest_cookies() -> list[dict]:
-    client = MongoClient(MONGO_URI)
-    db     = client[MONGO_DB]
-    doc    = db.auth_tokens.find_one(sort=[("timestamp", -1)])
-    client.close()
-    if not doc:
-        raise RuntimeError("No cookies in auth_tokens. Run get_cookies.py first.")
-    ts = doc.get("timestamp")
-    if ts is not None:
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-        if age_h > MAX_SESSION_AGE_HOURS:
-            raise RuntimeError(
-                f"MLS session is {age_h:.1f}h old (maximum configured age: {MAX_SESSION_AGE_HOURS:.1f}h). "
-                "Renew the authorized session manually; this job will not automate login."
-            )
-    return doc["cookies"]
+def get_active_session() -> dict:
+    """Load the newest session that has not been retired after auth failure."""
+    return load_active_session(MONGO_URI, MONGO_DB)
 
 
 def build_session(cookies: list[dict]) -> requests.Session:
@@ -184,6 +174,7 @@ def fetch_and_store_details(session: requests.Session,
         url = DETAILS_URL_TPL.format(dcid=dcid)
         try:
             resp = session.get(url, timeout=30)
+            assert_authenticated_response(resp)
             resp.raise_for_status()
             data        = resp.json()
             detail_list = data.get("data", [])
@@ -210,6 +201,8 @@ def fetch_and_store_details(session: requests.Session,
             print(f"  ✓ {listing_id} — {len(photos)} photos")
             success += 1
 
+        except MLSAuthenticationError:
+            raise
         except Exception as e:
             err = str(e)
             print(f"  ✗ {listing_id} (DCID={dcid}): {err}")
@@ -260,7 +253,7 @@ def main():
 
     print("[1/2] Loading cookies from MongoDB...")
     try:
-        cookies = get_latest_cookies()
+        token = get_active_session()
     except RuntimeError as e:
         print(f"✗ {e}")
         # Log the failed run
@@ -269,14 +262,23 @@ def main():
         client.close()
         sys.exit(1)
 
-    session = build_session(cookies)
+    session = build_session(token["cookies"])
 
     print("[2/2] Fetching details for new listings...")
-    success, fail = fetch_and_store_details(
-        session, refresh_active_details=args.refresh_active_details,
-        closed_only=args.closed_only, active_only=args.active_only, limit=args.limit,
-        stop_at_storage_mb=args.stop_at_storage_mb,
-    )
+    try:
+        success, fail = fetch_and_store_details(
+            session, refresh_active_details=args.refresh_active_details,
+            closed_only=args.closed_only, active_only=args.active_only, limit=args.limit,
+            stop_at_storage_mb=args.stop_at_storage_mb,
+        )
+    except MLSAuthenticationError as e:
+        retire_session(MONGO_URI, MONGO_DB, token["_id"], str(e))
+        message = f"MLS session rejected and marked expired: {e}"
+        print(f"✗ {message}")
+        client = MongoClient(MONGO_URI)
+        log_run(client[MONGO_DB], started_at, time.time() - t0, 0, 0, error=message)
+        client.close()
+        sys.exit(1)
 
     # Write summary run record
     client = MongoClient(MONGO_URI)

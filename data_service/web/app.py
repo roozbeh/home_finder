@@ -727,7 +727,8 @@ def admin_data_status():
         sort=[("timestamp", -1)],
     )
     latest_session = db.auth_tokens.find_one(
-        {}, {"_id": 0, "timestamp": 1}, sort=[("timestamp", -1)]
+        {}, {"_id": 0, "timestamp": 1, "status": 1, "expired_at": 1, "expired_reason": 1},
+        sort=[("timestamp", -1)]
     )
 
     now = datetime.now(timezone.utc)
@@ -737,6 +738,9 @@ def admin_data_status():
         if timestamp.tzinfo is None:
             timestamp = timestamp.replace(tzinfo=timezone.utc)
         session_age_minutes = max(0, round((now - timestamp).total_seconds() / 60))
+    session_expired = bool(latest_session and latest_session.get("expired_at"))
+    session_status = "Expired — refresh required" if session_expired else "Usable"
+    session_reason = (latest_session or {}).get("expired_reason")
 
     def iso(value):
         return value.isoformat() if isinstance(value, datetime) else None
@@ -755,6 +759,9 @@ def admin_data_status():
         last_refresh=last_refresh or {},
         last_refresh_at=iso((last_refresh or {}).get("timestamp")),
         session_age_minutes=session_age_minutes,
+        session_expired=session_expired,
+        session_status=session_status,
+        session_reason=session_reason,
         now=now.isoformat(),
     )
 
