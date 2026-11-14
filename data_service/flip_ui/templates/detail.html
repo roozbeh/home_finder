@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Resale pair review — Flip Finder{% endblock %}
+{% block body %}
+<main class="workspace detail">
+  <a class="back" href="/admin">← Back to review queue</a>
+  <header class="detail-head">
+    <div>
+      <p class="eyebrow">OBSERVED {{ flip.hold_days }}-DAY HOLD · {{ flip.confidence }} CONFIDENCE</p>
+      <h1>{{ flip.city.title() if flip.city else 'Market unavailable' }}</h1>
+      <p>{{ flip.caution }}</p>
+    </div>
+    <div class="metric"><span>Observed gross spread</span><strong class="{{ 'positive' if flip.gross_spread >= 0 else 'negative' }}">{{ flip.gross_spread|money }}</strong><small>{{ flip.gross_roi|percent }} gross ROI · not net profit</small></div>
+  </header>
+  <section class="label-panel">
+    <div><span class="label {{ label.label if label else 'unlabeled' }}">{{ (label.label if label else 'unlabeled').replace('_',' ') }}</span>{% if label and label.updated_at %}<small>Last labeled {{ label.updated_at|dateonly }}</small>{% endif %}</div>
+    <form action="{{ url_for('save_label', pair_key=flip.pair_key) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button name="label" value="success_flip" class="button success" type="submit">Mark success flip</button><button name="label" value="failed_flip" class="button danger" type="submit">Mark failed flip</button><button name="label" value="unlabeled" class="button ghost" type="submit">Clear label</button></form>
+  </section>
+  {% if label and label.history %}<section class="history"><strong>Label history</strong>{% for event in label.history|reverse %}<span>{{ event['from'] or 'unlabeled' }} → {{ event.to.replace('_',' ') }} · {{ event.at|dateonly }}</span>{% endfor %}</section>{% endif %}
+  <section class="pair-grid">
+    {% for side, listing, price, close_date, listing_id in [('Purchase side', buy, flip.buy_price, flip.buy_date, flip.buy_mls), ('Resale side', sell, flip.sell_price, flip.sell_date, flip.sell_mls)] %}
+    <article class="listing-panel {% if side == 'Resale side' %}resale{% endif %}">
+      <div class="panel-title"><span>{{ side }}</span><b>{{ price|money }}</b></div>
+      {% if listing.photos %}<img class="property-photo" src="{{ listing.photos[0] }}" alt="{{ side }} listing photo">{% else %}<div class="photo-empty">No authorized photo reference available</div>{% endif %}
+      <h2>{{ listing.address }}</h2><p>{{ listing.city }} {{ listing.zip_code or '' }}</p>
+      <dl><dt>MLS</dt><dd>{{ listing_id }}</dd><dt>Closed</dt><dd>{{ close_date|dateonly }}</dd><dt>Home</dt><dd>{{ listing.beds or '—' }} bd · {{ listing.baths or '—' }} ba · {{ listing.sqft or '—' }} sqft</dd><dt>Built</dt><dd>{{ listing.year_built or '—' }}</dd><dt>Type</dt><dd>{{ listing.property_type or '—' }}</dd></dl>
+    </article>
+    {% endfor %}
+  </section>
+</main>
+{% endblock %}

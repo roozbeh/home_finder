@@ -83,6 +83,26 @@ services:
     security_opt:
       - seccomp=unconfined
 
+  # Private visual review workspace for derived FlipDB records. Apache proxies
+  # the loopback-only port at flips.roozbeh.realtor.
+  flip_ui:
+    build:
+      context: ./flip_ui
+      dockerfile: Dockerfile
+    container_name: flip_ui
+    restart: unless-stopped
+    env_file:
+      - env
+    ports:
+      - "127.0.0.1:8090:5000"
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
+    security_opt:
+      - seccomp=unconfined
+
 volumes:
   # mongo_data:   # uncomment when re-enabling local mongo
   app_data:

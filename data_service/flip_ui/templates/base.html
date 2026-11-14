@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Flip Finder{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head><body>
+  <nav class="nav"><a class="brand" href="/">FLIP<span>FINDER</span></a><div class="nav-links">{% if session.get('flip_ui_admin') %}<a href="/admin">Review queue</a><form action="/admin/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="link-button">Sign out</button></form>{% else %}<a href="/admin">Admin</a>{% endif %}</div></nav>
+  {% block body %}{% endblock %}
+</body></html>
