@@ -1,0 +1,3 @@
+# Daily derived resale-pair materialization. Cron is evaluated in the server's
+# configured timezone; select a low-traffic hour appropriate for that host.
+30 3 * * * FLIP_FINDER_APP_ROOT=/home/ubuntu/home_finder FLIP_FINDER_LOG_DIR=/mnt/extra500/flip_finder/logs /home/ubuntu/home_finder/ops/aws/flip_detector_refresh.sh

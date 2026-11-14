@@ -50,3 +50,19 @@ services:
         soft: 65535
         hard: 65535
     command: ["python", "-m", "flip_finder.daily", "--write"]
+
+  # Once-daily, derived research dataset. This reads only mls.mls_listings and
+  # writes observed short-hold resale pairs to flip_finder.flipdb.
+  flip_detector_refresh:
+    build:
+      context: ..
+      dockerfile: flip_finder/Dockerfile
+    env_file: env
+    security_opt:
+      - seccomp=unconfined
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
+    command: ["python", "-m", "flip_finder.flipdb", "--write"]

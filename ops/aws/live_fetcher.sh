@@ -40,4 +40,10 @@ docker exec mls_web python /tmp/search_and_store.py --active-only --market bay-a
 # active records because already enriched records are excluded.
 docker cp mls_service/fetch_details.py mls_web:/tmp/fetch_details.py
 docker exec mls_web python /tmp/fetch_details.py --active-only --limit 450 --stop-at-storage-mb 4500
+
+# Historical closed-sale details are not on the urgent active-inventory path,
+# but are essential for resale-pair research and later comparable analysis.
+# Fetch a bounded backlog each run; per-listing failures remain in detail_logs
+# for diagnosis rather than silently dropping records.
+docker exec mls_web python /tmp/fetch_details.py --closed-only --limit 450 --stop-at-storage-mb 4500
 echo "[$(date -Is)] live fetcher completed"
