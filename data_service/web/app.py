@@ -703,6 +703,57 @@ def admin_dashboard():
     )
 
 
+@app.route("/admin/data-status")
+@admin_required
+def admin_data_status():
+    """Private operational view of MLS data freshness and coverage.
+
+    This intentionally reports counts and run metadata only.  It does not
+    expose MLS credentials, cookie values, raw MLS payloads, or job controls.
+    """
+    listings = db.mls_listings
+    active_count = listings.count_documents({"MLS_STATUS": "ACTV"})
+    sold_count = listings.count_documents({"MLS_STATUS": "SLD"})
+    active_cities = len([city for city in listings.distinct("CITY", {"MLS_STATUS": "ACTV"}) if city])
+    active_with_details = listings.count_documents({"MLS_STATUS": "ACTV", "details": {"$exists": True}})
+    active_missing_details = max(0, active_count - active_with_details)
+
+    last_refresh = db.mls_runs.find_one(
+        {"type": "search"},
+        {"_id": 0, "timestamp": 1, "duration_s": 1, "fetched": 1,
+         "inserted": 1, "updated": 1, "unchanged": 1, "error": 1},
+        sort=[("timestamp", -1)],
+    )
+    latest_session = db.auth_tokens.find_one(
+        {}, {"_id": 0, "timestamp": 1}, sort=[("timestamp", -1)]
+    )
+
+    now = datetime.now(timezone.utc)
+    session_age_minutes = None
+    if latest_session and isinstance(latest_session.get("timestamp"), datetime):
+        timestamp = latest_session["timestamp"]
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        session_age_minutes = max(0, round((now - timestamp).total_seconds() / 60))
+
+    def iso(value):
+        return value.isoformat() if isinstance(value, datetime) else None
+
+    return render_template(
+        "admin_data_status.html",
+        active_count=active_count,
+        sold_count=sold_count,
+        active_cities=active_cities,
+        active_with_details=active_with_details,
+        active_missing_details=active_missing_details,
+        detail_coverage_pct=round(active_with_details * 100 / active_count, 1) if active_count else 0,
+        last_refresh=last_refresh or {},
+        last_refresh_at=iso((last_refresh or {}).get("timestamp")),
+        session_age_minutes=session_age_minutes,
+        now=now.isoformat(),
+    )
+
+
 @app.route("/admin/conversation/<conv_session_id>")
 @admin_required
 def admin_conversation(conv_session_id):
