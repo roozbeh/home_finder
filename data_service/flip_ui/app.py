@@ -58,6 +58,15 @@ def inject_template_values():
     return {"csrf_token": csrf_token}
 
 
+@app.after_request
+def protect_admin_responses(response):
+    """Keep the private review workspace out of browser/proxy caches and search."""
+    if request.path.startswith("/admin"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    return response
+
+
 def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
