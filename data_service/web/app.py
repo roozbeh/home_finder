@@ -6,6 +6,7 @@ import uuid
 import time
 import logging
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect
 from pymongo import MongoClient
@@ -742,8 +743,30 @@ def admin_data_status():
     session_status = "Expired — refresh required" if session_expired else "Usable"
     session_reason = (latest_session or {}).get("expired_reason")
 
-    def iso(value):
-        return value.isoformat() if isinstance(value, datetime) else None
+    pacific = ZoneInfo("America/Los_Angeles")
+
+    def display_time(value):
+        """Render operational timestamps for the operator's Pacific timezone."""
+        if not isinstance(value, datetime):
+            return {"relative": "No run recorded", "absolute": None}
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        elapsed_seconds = max(0, (now - value).total_seconds())
+        if elapsed_seconds < 60:
+            relative = "just now"
+        elif elapsed_seconds < 3600:
+            relative = f"{round(elapsed_seconds / 60)} minutes ago"
+        elif elapsed_seconds < 86400:
+            relative = f"{elapsed_seconds / 3600:.1f} hours ago"
+        else:
+            relative = f"{elapsed_seconds / 86400:.1f} days ago"
+        local = value.astimezone(pacific)
+        return {
+            "relative": relative,
+            "absolute": local.strftime("%b %d, %Y, %-I:%M %p %Z"),
+        }
+
+    last_refresh_display = display_time((last_refresh or {}).get("timestamp"))
 
     return render_template(
         "admin_data_status.html",
@@ -757,7 +780,7 @@ def admin_data_status():
         sold_missing_details=sold_missing_details,
         sold_detail_coverage_pct=round(sold_with_details * 100 / sold_count, 1) if sold_count else 0,
         last_refresh=last_refresh or {},
-        last_refresh_at=iso((last_refresh or {}).get("timestamp")),
+        last_refresh_display=last_refresh_display,
         session_age_minutes=session_age_minutes,
         session_expired=session_expired,
         session_status=session_status,
