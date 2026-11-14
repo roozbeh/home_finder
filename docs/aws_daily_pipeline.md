@@ -36,9 +36,8 @@ set -a; source env; set +a
 python3 mls_service/get_cookies_manual.py
 ```
 
-Complete the normal login and MFA in the visible browser, then press Enter in
-the terminal after reaching ConnectMLS.  The helper stores the session without
-printing cookie values.
+Complete the normal login and MFA in the visible browser.  Once it reaches
+ConnectMLS, the helper stores the session without printing cookie values.
 
 ## Server prerequisites
 
@@ -94,3 +93,22 @@ available.  Inspect `/mnt/extra500/flip_finder/logs/` and the separate
 - SMTP is opt-in through configuration; no email is sent from a default build.
 - The classifier is deterministic and evidence-first.  It must not be marketed
   as a valuation or investment recommendation.
+
+## Fifteen-minute live inventory refresh
+
+`ops/aws/live_fetcher.sh` refreshes the 101-city active inventory and then
+enriches up to 450 newly discovered active listings.  It writes to the single
+append-only operational log:
+
+```text
+/mnt/extra500/flip_finder/logs/live_fetcher.log
+```
+
+The script takes an exclusive lock, skips while an initial full detail backfill
+is running, and rotates the log at 50 MB.  Install it only after the initial
+detail backfill has finished:
+
+```sh
+crontab /home/ubuntu/home_finder/ops/aws/live_fetcher.cron
+crontab -l
+```
