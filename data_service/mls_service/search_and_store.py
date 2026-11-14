@@ -13,11 +13,13 @@ Usage:
     python search_and_store.py
 """
 
+import argparse
 import os
 import sys
 import time
+from collections.abc import Callable
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from pymongo import MongoClient
 
@@ -37,57 +39,128 @@ NUMERIC_FIELDS = {
     "DAYS_ON_MARKET", "YEAR_BUILT", "ACRES", "LONGITUDE", "LATITUDE",
 }
 
-SEARCH_PAYLOAD = {
-    "searchclass": "RE",
-    "searchtype":  "LISTING",
-    "boundaries":  None,
-    "layers":      [],
-    "report":      "agent-rd-table",
-    "fields": [
-        {"ordinal": None, "id": "MLS_STATUS",
-         "value": "ACTV,BOMK,AC,NEW,PCH,CS",
-         "option": None, "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "CITY", "value": "BELMONT,BRISBANE,COLMA,DALY CITY,EASTPAALTO,FOSTERCITY,HALFMO BAY,LOS ALTOS,LOS GATOS,PACIFICA,PORTOLA,SAN CARLOS,SARATOGA,ATHERTON,WOODSIDE",
-         "option": "", "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "COUNTY_OR_PARISH", "value": "",
-         "option": None, "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "SUBDIVISION_NAME", "value": "",
-         "option": "", "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "SRCHPRICE", "value": None, "option": None,
-         "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "BUILDING_TYPE", "value": "",
-         "option": "", "min": None, "max": None, "none": "", "all": ""},
-        {"ordinal": None, "id": "BEDROOMS_TOTAL", "value": None, "option": None,
-         "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "BATHROOMS_FULL", "value": None, "option": None,
-         "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "SQFT", "value": None, "option": None,
-         "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "DEFAULT_ADDRESS_SEARCH", "value": "",
-         "option": None, "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "LISTING_CONTRACT_DATE", "value": None,
-         "option": None, "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "OFF_MARKET_DATE", "value": None,
-         "option": None, "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "CLOSE_DATE", "value": None,
-         "option": None, "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "BOARDID", "value": "",
-         "option": "", "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "LISTING_AGREEMENT", "value": "",
-         "option": "", "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "SPECIAL_INFO", "value": "",
-         "option": None, "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "LISTING_ID", "value": None,
-         "option": "", "min": None, "max": None, "none": None, "all": None},
-        {"ordinal": None, "id": "FEATURES_SEARCH", "value": None,
-         "option": "", "min": None, "max": None, "none": "", "all": ""},
-        {"ordinal": None, "id": "SOURCE_MLS",
-         "value": "BR,CC,BE,ML,SF,BA,ME,CR,CL,CD",
-         "option": "", "min": None, "max": None, "none": None, "all": None},
-    ],
-    "record":       True,
-    "context_data": {},
-}
+# ── Search configuration ──────────────────────────────────────────────────────
+
+# Statuses fetched by the original active-market search (unchanged).
+ACTIVE_STATUSES = "ACTV,BOMK,AC,NEW,PCH,CS"
+ACTIVE_CITIES   = ("BELMONT,BRISBANE,COLMA,DALY CITY,EASTPAALTO,FOSTERCITY,"
+                   "HALFMO BAY,LOS ALTOS,LOS GATOS,PACIFICA,PORTOLA,SAN CARLOS,"
+                   "SARATOGA,ATHERTON,WOODSIDE")
+
+# Sold/closed status code used by this MLS (verified against the search API:
+# MLS_STATUS=SLD returns rows whose MLS_STATUS/RAW_STATUS are both "SLD";
+# "SOLD" is accepted as an alias by the API and normalizes to SLD).
+SOLD_STATUS = "SLD"
+
+# All 20 incorporated San Mateo County cities/towns. The sold search runs once
+# per city to stay below the API's ~5000-row response cap. These are source-city
+# query values; normalization occurs downstream. Unincorporated communities are
+# intentionally not included until their accepted MLS locality values are
+# verified separately.
+# Source: https://www.smcgov.org/lafco/cities-san-mateo-county
+TARGET_CITIES = [
+    "ATHERTON", "BELMONT", "BRISBANE", "BURLINGAME", "COLMA", "DALY CITY",
+    "EASTPAALTO", "FOSTERCITY", "HALFMO BAY", "HILLSBOROUGH", "MENLO PARK",
+    "MILLBRAE", "PACIFICA", "PORTOLA", "REDWOOD CITY", "SAN BRUNO",
+    "SAN CARLOS", "SAN MATEO", "SOUTH SAN FRANCISCO", "WOODSIDE",
+]
+
+# The 101 incorporated municipalities in the nine-county San Francisco Bay
+# Area.  These are source-query locality values, not a claim that every
+# locality is necessarily available through the authenticated MLS account.
+# Failed/unsupported localities are logged by fetch_sold_listings and must not
+# be interpreted downstream as zero closed sales.
+# Scope reference: https://en.wikipedia.org/wiki/List_of_cities_and_towns_in_the_San_Francisco_Bay_Area
+BAY_AREA_CITIES = [
+    "ALAMEDA", "ALBANY", "AMERICAN CANYON", "ANTIOCH", "ATHERTON",
+    "BELMONT", "BELVEDERE", "BENICIA", "BERKELEY", "BRENTWOOD",
+    "BRISBANE", "BURLINGAME", "CALISTOGA", "CAMPBELL", "CLAYTON",
+    "CLOVERDALE", "COLMA", "CONCORD", "CORTE MADERA", "COTATI",
+    "CUPERTINO", "DALY CITY", "DANVILLE", "DIXON", "DUBLIN",
+    "EASTPAALTO", "EL CERRITO", "EMERYVILLE", "FAIRFAX", "FAIRFIELD",
+    "FOSTERCITY", "FREMONT", "GILROY", "HALFMO BAY", "HAYWARD",
+    "HEALDSBURG", "HERCULES", "HILLSBOROUGH", "LAFAYETTE", "LARKSPUR",
+    "LIVERMORE", "LOS ALTOS", "LOS ALTOS HILLS", "LOS GATOS", "MARTINEZ",
+    "MENLO PARK", "MILL VALLEY", "MILLBRAE", "MILPITAS", "MONTE SERENO",
+    "MORAGA", "MORGAN HILL", "MOUNTAIN VIEW", "NAPA", "NEWARK", "NOVATO",
+    "OAKLAND", "OAKLEY", "ORINDA", "PACIFICA", "PALO ALTO", "PETALUMA",
+    "PIEDMONT", "PINOLE", "PITTSBURG", "PLEASANT HILL", "PLEASANTON",
+    "PORTOLA", "REDWOOD CITY", "RICHMOND", "RIO VISTA", "ROHNERT PARK",
+    "ROSS", "ST HELENA", "SAN ANSELMO", "SAN BRUNO", "SAN CARLOS",
+    "SAN FRANCISCO", "SAN JOSE", "SAN LEANDRO", "SAN MATEO", "SAN PABLO",
+    "SAN RAFAEL", "SAN RAMON", "SANTA CLARA", "SANTA ROSA", "SARATOGA",
+    "SAUSALITO", "SEBASTOPOL", "SONOMA", "SOUTH SAN FRANCISCO", "SUISUN CITY",
+    "SUNNYVALE", "TIBURON", "UNION CITY", "VACAVILLE", "VALLEJO",
+    "WALNUT CREEK", "WINDSOR", "WOODSIDE", "YOUNTVILLE",
+]
+
+# How far back the sold/closed search looks.
+SOLD_LOOKBACK_DAYS = 365
+MAX_SESSION_AGE_HOURS = float(os.environ.get("MLS_MAX_SESSION_AGE_HOURS", "12"))
+
+# If a single query returns this many rows the API response is likely
+# truncated (server cap ~5000) — re-run the city in monthly chunks instead.
+ROW_CAP_THRESHOLD = 4900
+
+
+def build_search_payload(status_value: str, city_value: str,
+                         close_min: str = None, close_max: str = None) -> dict:
+    """Build a search payload with the same field list as the original search."""
+    return {
+        "searchclass": "RE",
+        "searchtype":  "LISTING",
+        "boundaries":  None,
+        "layers":      [],
+        "report":      "agent-rd-table",
+        "fields": [
+            {"ordinal": None, "id": "MLS_STATUS",
+             "value": status_value,
+             "option": None, "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "CITY", "value": city_value,
+             "option": "", "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "COUNTY_OR_PARISH", "value": "",
+             "option": None, "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "SUBDIVISION_NAME", "value": "",
+             "option": "", "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "SRCHPRICE", "value": None, "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "BUILDING_TYPE", "value": "",
+             "option": "", "min": None, "max": None, "none": "", "all": ""},
+            {"ordinal": None, "id": "BEDROOMS_TOTAL", "value": None, "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "BATHROOMS_FULL", "value": None, "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "SQFT", "value": None, "option": None,
+             "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "DEFAULT_ADDRESS_SEARCH", "value": "",
+             "option": None, "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "LISTING_CONTRACT_DATE", "value": None,
+             "option": None, "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "OFF_MARKET_DATE", "value": None,
+             "option": None, "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "CLOSE_DATE", "value": None,
+             "option": None, "min": close_min, "max": close_max, "none": None, "all": None},
+            {"ordinal": None, "id": "BOARDID", "value": "",
+             "option": "", "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "LISTING_AGREEMENT", "value": "",
+             "option": "", "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "SPECIAL_INFO", "value": "",
+             "option": None, "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "LISTING_ID", "value": None,
+             "option": "", "min": None, "max": None, "none": None, "all": None},
+            {"ordinal": None, "id": "FEATURES_SEARCH", "value": None,
+             "option": "", "min": None, "max": None, "none": "", "all": ""},
+            {"ordinal": None, "id": "SOURCE_MLS",
+             "value": "BR,CC,BE,ML,SF,BA,ME,CR,CL,CD",
+             "option": "", "min": None, "max": None, "none": None, "all": None},
+        ],
+        "record":       True,
+        "context_data": {},
+    }
+
+
+# Original active-market search payload (identical to previous behavior).
+SEARCH_PAYLOAD = build_search_payload(ACTIVE_STATUSES, ACTIVE_CITIES)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -122,6 +195,11 @@ def get_latest_cookies() -> list[dict]:
         ts = ts.replace(tzinfo=timezone.utc)
     age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
     print(f"  Using cookies from {ts.isoformat()} ({age_h:.1f}h ago)")
+    if age_h > MAX_SESSION_AGE_HOURS:
+        raise RuntimeError(
+            f"MLS session is {age_h:.1f}h old (maximum configured age: {MAX_SESSION_AGE_HOURS:.1f}h). "
+            "Renew the authorized session manually; this job will not automate login."
+        )
     return doc["cookies"]
 
 
@@ -142,19 +220,97 @@ def build_session(cookies: list[dict]) -> requests.Session:
     return session
 
 
-def fetch_listings(session: requests.Session) -> list[dict]:
-    print(f"  POSTing to {SEARCH_URL} ...")
+def fetch_listings(session: requests.Session, payload: dict = None,
+                   label: str = "") -> list[dict]:
+    payload = payload if payload is not None else SEARCH_PAYLOAD
+    print(f"  POSTing to {SEARCH_URL} {label}...")
     resp = session.post(
         SEARCH_URL,
-        json=SEARCH_PAYLOAD,
+        json=payload,
         headers={"Content-Type": "application/json;charset=UTF-8"},
-        timeout=60,
+        timeout=120,
     )
     resp.raise_for_status()
     data     = resp.json()
     listings = data.get("data", data) if isinstance(data, dict) else data
-    print(f"  Fetched {len(listings)} listings")
+    print(f"  Fetched {len(listings)} listings {label}")
     return listings
+
+
+def _month_windows(start: datetime, end: datetime) -> list[tuple[str, str]]:
+    """Split [start, end] into monthly (MM/DD/YYYY) windows for cap-safe queries."""
+    windows = []
+    cur = start
+    while cur < end:
+        nxt = min(end, datetime(cur.year + (1 if cur.month == 12 else 0),
+                                (cur.month % 12) + 1, cur.day,
+                                tzinfo=cur.tzinfo))
+        windows.append((cur.strftime("%m/%d/%Y"), nxt.strftime("%m/%d/%Y")))
+        cur = nxt
+    return windows
+
+
+def fetch_sold_listings(session: requests.Session,
+                        lookback_days: int = SOLD_LOOKBACK_DAYS,
+                        cities: list[str] = TARGET_CITIES,
+                        progress: Callable[[int, int, str, int], None] | None = None) -> tuple[list[dict], list[str]]:
+    """Fetch SLD (closed) listings for TARGET_CITIES within a bounded history.
+
+    Runs one query per city; if a city hits the row cap it is re-fetched in
+    monthly windows. Results are deduplicated by LISTING_ID.
+    """
+    if lookback_days < 1:
+        raise ValueError("lookback_days must be at least one day")
+    end   = datetime.now(timezone.utc)
+    start = end - timedelta(days=lookback_days)
+    close_max = end.strftime("%m/%d/%Y")
+    close_min = start.strftime("%m/%d/%Y")
+
+    by_id: dict[str, dict] = {}
+    errors: list[str] = []
+    for completed, city in enumerate(cities, start=1):
+        city_rows = 0
+        try:
+            payload = build_search_payload(SOLD_STATUS, city, close_min, close_max)
+            rows = fetch_listings(session, payload, label=f"[sold {city}]")
+            if len(rows) >= ROW_CAP_THRESHOLD:
+                print(f"  ⚠ {city} hit row cap — re-fetching in monthly windows")
+                for w_min, w_max in _month_windows(start, end):
+                    p = build_search_payload(SOLD_STATUS, city, w_min, w_max)
+                    for row in fetch_listings(session, p, label=f"[sold {city} {w_min}-{w_max}]"):
+                        by_id[row.get("LISTING_ID") or row.get("DCID")] = row
+            else:
+                for row in rows:
+                    by_id[row.get("LISTING_ID") or row.get("DCID")] = row
+            city_rows = len(rows)
+        except Exception as exc:
+            message = f"{city}: {exc}"
+            errors.append(message)
+            print(f"  ✗ Sold fetch failed for {message}; continuing")
+        if progress:
+            progress(completed, len(cities), city, city_rows)
+    by_id.pop(None, None)
+    print(f"  Sold/closed total (deduped): {len(by_id)}; city failures: {len(errors)}")
+    return list(by_id.values()), errors
+
+
+def fetch_target_active_listings(session: requests.Session,
+                                 cities: list[str] = TARGET_CITIES,
+                                 statuses: str = "ACTV") -> list[dict]:
+    """Fetch the verified active inventory for each requested city.
+
+    ``ACTV`` is the only active status whose meaning has been verified for
+    screening.  In particular, do not silently treat backup, contingent, or
+    pending records as available investment opportunities.
+    """
+    by_id: dict[str, dict] = {}
+    for city in cities:
+        payload = build_search_payload(statuses, city)
+        for row in fetch_listings(session, payload, label=f"[active {city}]"):
+            by_id[row.get("LISTING_ID") or row.get("DCID")] = row
+    by_id.pop(None, None)
+    print(f"  Target-city active total (deduped): {len(by_id)}")
+    return list(by_id.values())
 
 
 # ── Upsert with history ───────────────────────────────────────────────────────
@@ -218,11 +374,12 @@ def upsert_listings(listings: list[dict]):
 # ── Run logging ───────────────────────────────────────────────────────────────
 
 def log_run(started_at: datetime, duration_s: float, fetched: int,
-            inserted: int, updated: int, unchanged: int, error: str = None):
+            inserted: int, updated: int, unchanged: int, error: str = None,
+            run_type: str = "search"):
     client = MongoClient(MONGO_URI)
     db     = client[MONGO_DB]
     db.mls_runs.insert_one({
-        "type":       "search",
+        "type":       run_type,
         "timestamp":  started_at,
         "duration_s": round(duration_s, 1),
         "fetched":    fetched,
@@ -234,9 +391,46 @@ def log_run(started_at: datetime, duration_s: float, fetched: int,
     client.close()
 
 
+def log_sold_progress(started_at: datetime, market: str, completed: int,
+                      total: int, city: str, city_rows: int) -> None:
+    """Persist a compact status record for monitoring long authorized pulls."""
+    client = MongoClient(MONGO_URI)
+    try:
+        client[MONGO_DB].mls_runs.update_one(
+            {"type": "search_sold_progress", "market": market, "started_at": started_at},
+            {"$set": {
+                "updated_at": datetime.now(timezone.utc), "completed_cities": completed,
+                "total_cities": total, "current_city": city, "city_rows": city_rows,
+                "percent_complete": round(completed * 100 / total, 1),
+            }},
+            upsert=True,
+        )
+    finally:
+        client.close()
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser(description="Refresh authorized ConnectMLS listing data.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--active-only", action="store_true",
+        help="refresh active listings only; skip closed-sale history for this run",
+    )
+    mode.add_argument(
+        "--sold-only", action="store_true",
+        help="refresh closed-sale history only; preserve current active inventory",
+    )
+    parser.add_argument(
+        "--sold-lookback-days", type=int, default=SOLD_LOOKBACK_DAYS,
+        help="closed-sale lookback window; use 730 for the two-year resale-history refresh",
+    )
+    parser.add_argument(
+        "--market", choices=["san-mateo", "bay-area"], default="san-mateo",
+        help="geography for this refresh; bay-area requests all 101 incorporated municipalities",
+    )
+    args = parser.parse_args()
     print("=== search_and_store.py: MLS Fetch & Store ===")
     started_at = datetime.now(timezone.utc)
     t0         = time.time()
@@ -249,18 +443,53 @@ def main():
         log_run(started_at, time.time() - t0, 0, 0, 0, 0, error=str(e))
         sys.exit(1)
 
-    print("[2/3] Fetching listings from MLS API...")
     session = build_session(cookies)
-    try:
-        listings = fetch_listings(session)
-    except Exception as e:
-        print(f"✗ Fetch failed: {e}")
-        log_run(started_at, time.time() - t0, 0, 0, 0, 0, error=str(e))
-        sys.exit(1)
+    active_cities = BAY_AREA_CITIES if args.market == "bay-area" else TARGET_CITIES
+    if not args.sold_only:
+        print(f"[2/5] Fetching verified active listings (ACTV; {len(active_cities)} {args.market} cities)...")
+        try:
+            listings = fetch_target_active_listings(session, active_cities, statuses="ACTV")
+        except Exception as e:
+            print(f"✗ Fetch failed: {e}")
+            log_run(started_at, time.time() - t0, 0, 0, 0, 0, error=str(e))
+            sys.exit(1)
+        print("[3/5] Upserting active listings to MongoDB...")
+        inserted, updated, unchanged = upsert_listings(listings)
+        log_run(started_at, time.time() - t0, len(listings), inserted, updated, unchanged)
+    else:
+        print("[2/5] Skipping active refresh (--sold-only).")
 
-    print("[3/3] Upserting listings to MongoDB...")
-    inserted, updated, unchanged = upsert_listings(listings)
-    log_run(started_at, time.time() - t0, len(listings), inserted, updated, unchanged)
+    # ── Outreach data collection (additive — never touches the search above) ──
+    # Failures here must not affect the original active search, which has
+    # already completed and been logged.
+
+    if args.active_only:
+        print("[4/5] Skipping sold/closed refresh (--active-only).")
+    else:
+        sold_cities = BAY_AREA_CITIES if args.market == "bay-area" else TARGET_CITIES
+        print(f"[4/5] Fetching sold/closed listings (SLD, last {args.sold_lookback_days} days, {len(sold_cities)} {args.market} cities)...")
+        t1 = time.time()
+        try:
+            sold, city_errors = fetch_sold_listings(
+                session, args.sold_lookback_days, sold_cities,
+                progress=lambda done, total, city, rows: log_sold_progress(
+                    started_at, args.market, done, total, city, rows),
+            )
+            ins, upd, unch = upsert_listings(sold)
+            log_run(started_at, time.time() - t1, len(sold), ins, upd, unch,
+                    error="; ".join(city_errors) if city_errors else None,
+                    run_type="search_sold")
+        except Exception as e:
+            print(f"✗ Sold fetch failed: {e}")
+            log_run(started_at, time.time() - t1, 0, 0, 0, 0, error=str(e),
+                    run_type="search_sold")
+
+    if args.sold_only:
+        print("[5/5] Skipping target active refresh (--sold-only).")
+        print("Done.")
+        return
+    print("[5/5] Active inventory already refreshed in step 2 (no duplicate query).")
+
     print("Done.")
 
 

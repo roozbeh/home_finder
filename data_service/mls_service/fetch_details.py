@@ -6,14 +6,18 @@ For listings in mls_listings that don't yet have a `details` field,
 fetches detail data from the ConnectMLS API and stores it along with
 a `details_fetched` timestamp and a `photos` URL array.
 
-Only processes listings that are missing `details`, so repeated runs
-are safe and won't burn unnecessary API quota.
+By default only processes listings that are missing `details`, plus sold
+records whose details have not reached SLD. The opt-in active refresh mode
+re-downloads detail payloads for every `ACTV` record after a fresh search,
+which refreshes the fields required by the investment-screening pipeline.
 
 Usage:
     export MONGO_URI='mongodb://user:pass@localhost:27017/mls?authSource=admin'
     python fetch_details.py
+    python fetch_details.py --refresh-active-details
 """
 
+import argparse
 import os
 import sys
 import time
@@ -28,6 +32,7 @@ DETAILS_URL_TPL  = (
 MONGO_URI        = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB         = os.environ.get("MONGO_DB", "mls")
 RATE_LIMIT_SLEEP = 1.0   # seconds between API calls to avoid rate-limiting
+MAX_SESSION_AGE_HOURS = float(os.environ.get("MLS_MAX_SESSION_AGE_HOURS", "12"))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -39,6 +44,16 @@ def get_latest_cookies() -> list[dict]:
     client.close()
     if not doc:
         raise RuntimeError("No cookies in auth_tokens. Run get_cookies.py first.")
+    ts = doc.get("timestamp")
+    if ts is not None:
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+        if age_h > MAX_SESSION_AGE_HOURS:
+            raise RuntimeError(
+                f"MLS session is {age_h:.1f}h old (maximum configured age: {MAX_SESSION_AGE_HOURS:.1f}h). "
+                "Renew the authorized session manually; this job will not automate login."
+            )
     return doc["cookies"]
 
 
@@ -109,20 +124,58 @@ def log_run(db, started_at: datetime, duration_s: float,
 
 # ── Main fetch loop ───────────────────────────────────────────────────────────
 
-def fetch_and_store_details(session: requests.Session) -> tuple[int, int]:
+def fetch_and_store_details(session: requests.Session,
+                            refresh_active_details: bool = False,
+                            closed_only: bool = False,
+                            active_only: bool = False,
+                            limit: int | None = None,
+                            stop_at_storage_mb: float | None = None) -> tuple[int, int]:
     client = MongoClient(MONGO_URI)
     db     = client[MONGO_DB]
     coll   = db.mls_listings
 
-    # Only listings that have a DCID but no details yet
-    pending = list(coll.find(
-        {"details": {"$exists": False}, "DCID": {"$exists": True, "$ne": ""}},
+    # Listings needing details:
+    #  1. no details yet, or
+    #  2. listing is now SLD but its details blob predates the sale
+    #     (stale details lack CLOSE_PRICE / buyer-agent info) — refetch those.
+    refresh_conditions = [
+        {"details": {"$exists": False}},
+        {"MLS_STATUS": "SLD", "details.status": {"$ne": "SLD"}},
+    ]
+    if refresh_active_details:
+        # ACTV is the only currently verified active code. This is deliberately
+        # not broadened to legacy codes whose semantics are not yet documented.
+        refresh_conditions.append({"MLS_STATUS": "ACTV"})
+
+    query = {"DCID": {"$exists": True, "$ne": ""}, "$or": refresh_conditions}
+    if closed_only:
+        query["MLS_STATUS"] = "SLD"
+    elif active_only:
+        # Daily screening needs complete data for newly discovered inventory,
+        # but should not re-download every active record each day.
+        query["MLS_STATUS"] = "ACTV"
+    cursor = coll.find(
+        query,
         {"_id": 1, "DCID": 1, "LISTING_ID": 1},
-    ))
-    print(f"  {len(pending)} listings need details")
+    )
+    if limit is not None:
+        cursor = cursor.limit(limit)
+    pending = list(cursor)
+    scope = " (closed sales only)" if closed_only else ""
+    if refresh_active_details:
+        scope += " (including all ACTV records)"
+    print(f"  {len(pending)} listings need details{scope}")
 
     success = fail = 0
     for doc in pending:
+        # Check before the first write and then every 100 records. Atlas's UI
+        # can differ slightly from dbStats, so callers should leave headroom.
+        if stop_at_storage_mb is not None and (success + fail) % 100 == 0:
+            stats = db.command("dbStats")
+            used_mb = (stats.get("storageSize", 0) + stats.get("indexSize", 0)) / 1_000_000
+            if used_mb >= stop_at_storage_mb:
+                print(f"  ⚠ Stopping before storage threshold: {used_mb:.1f} MB >= {stop_at_storage_mb:.1f} MB")
+                break
         dcid       = doc.get("DCID", "")
         listing_id = doc.get("LISTING_ID", dcid)
         if not dcid:
@@ -173,6 +226,34 @@ def fetch_and_store_details(session: requests.Session) -> tuple[int, int]:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser(description="Fetch authorized ConnectMLS listing details.")
+    parser.add_argument(
+        "--refresh-active-details", action="store_true",
+        help="refresh detail payloads for all verified ACTV listings after a fresh search",
+    )
+    parser.add_argument(
+        "--stop-at-storage-mb", type=float, default=None,
+        help="stop cleanly when MongoDB storage plus indexes reaches this MB threshold",
+    )
+    parser.add_argument(
+        "--closed-only", action="store_true",
+        help="fetch details only for closed sales; suitable for historical-comparable enrichment",
+    )
+    parser.add_argument(
+        "--active-only", action="store_true",
+        help="fetch missing details only for verified active listings; suitable for daily runs",
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None,
+        help="maximum listings to enrich in this batch; use bounded batches for storage monitoring",
+    )
+    args = parser.parse_args()
+    if args.closed_only and args.active_only:
+        parser.error("--closed-only and --active-only cannot be used together")
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be at least 1")
+    if args.stop_at_storage_mb is not None and args.stop_at_storage_mb <= 0:
+        parser.error("--stop-at-storage-mb must be positive")
     print("=== fetch_details.py: Fetch Listing Details ===")
     started_at = datetime.now(timezone.utc)
     t0         = time.time()
@@ -191,7 +272,11 @@ def main():
     session = build_session(cookies)
 
     print("[2/2] Fetching details for new listings...")
-    success, fail = fetch_and_store_details(session)
+    success, fail = fetch_and_store_details(
+        session, refresh_active_details=args.refresh_active_details,
+        closed_only=args.closed_only, active_only=args.active_only, limit=args.limit,
+        stop_at_storage_mb=args.stop_at_storage_mb,
+    )
 
     # Write summary run record
     client = MongoClient(MONGO_URI)

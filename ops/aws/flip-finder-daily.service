@@ -1,0 +1,16 @@
+[Unit]
+Description=Authorized MLS refresh and preliminary flip screening
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+Environment=FLIP_FINDER_APP_ROOT=/home/ubuntu/home_finder
+Environment=FLIP_FINDER_LOG_DIR=/mnt/extra500/flip_finder/logs
+ExecStart=/home/ubuntu/home_finder/ops/aws/daily_flip_pipeline.sh
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
