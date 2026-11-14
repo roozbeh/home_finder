@@ -7,7 +7,7 @@ APP_ROOT="${FLIP_FINDER_APP_ROOT:-/home/ubuntu/home_finder}"
 DATA_SERVICE_DIR="$APP_ROOT/data_service"
 LOG_DIR="${FLIP_FINDER_LOG_DIR:-/mnt/extra500/flip_finder/logs}"
 LOG_FILE="$LOG_DIR/live_fetcher.log"
-LOCK_FILE="${FLIP_FINDER_LOCK_FILE:-/mnt/extra500/flip_finder/live_fetcher.lock}"
+LOCK_FILE="${FLIP_FINDER_LOCK_FILE:-$LOG_DIR/live_fetcher.lock}"
 MAX_LOG_BYTES=52428800
 
 mkdir -p "$LOG_DIR"
