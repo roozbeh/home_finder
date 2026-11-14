@@ -1,6 +1,10 @@
 FROM python:3.12-slim
 
 WORKDIR /app
+# Docker 18.09 on the AWS host applies an old seccomp profile during builds
+# that blocks pip's Rich progress-rendering thread.  Disabling only the
+# progress display keeps the build compatible without weakening build security.
+ENV PIP_PROGRESS_BAR=off
 
 # Install Flask and dependencies — no browser/Selenium needed for the web server
 RUN pip install --no-cache-dir flask==3.0.3 "pymongo[srv]==4.7.2" gunicorn==22.0.0 anthropic==0.40.0 google-auth==2.29.0 requests==2.32.3
