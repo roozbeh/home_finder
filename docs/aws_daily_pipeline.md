@@ -27,6 +27,19 @@ the existing protected `mls.auth_tokens` store.  The server may use it only for
 the configured maximum age (default 12 hours).  It does not keep the session
 alive and fails closed when it expires.
 
+For a user-operated browser login helper (no credential filling or bot-check
+automation), run on the authorized workstation:
+
+```sh
+cd "/Users/roozbeh/Google Drive/iPronto/home_finder/data_service"
+set -a; source env; set +a
+python3 mls_service/get_cookies_manual.py
+```
+
+Complete the normal login and MFA in the visible browser, then press Enter in
+the terminal after reaching ConnectMLS.  The helper stores the session without
+printing cookie values.
+
 ## Server prerequisites
 
 The present AWS machine has a 500 GB volume at `/mnt/extra500`, with Docker
