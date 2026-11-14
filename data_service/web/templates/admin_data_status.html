@@ -66,6 +66,15 @@
       <div class="subtext">{{ '{:,}'.format(active_with_details) }} enriched · {{ '{:,}'.format(active_missing_details) }} awaiting details</div>
     </section>
 
+    <section class="status-card mt-3">
+      <div class="d-flex justify-content-between align-items-baseline mb-2">
+        <strong>Sold listings with details</strong>
+        <strong class="{{ 'good' if sold_detail_coverage_pct >= 95 else 'warn' }}">{{ sold_detail_coverage_pct }}%</strong>
+      </div>
+      <div class="progress mb-2"><div class="progress-bar bg-success" style="width: {{ sold_detail_coverage_pct }}%"></div></div>
+      <div class="subtext">{{ '{:,}'.format(sold_with_details) }} enriched · {{ '{:,}'.format(sold_missing_details) }} awaiting details</div>
+    </section>
+
     <div class="section-title">Refresh health</div>
     <section class="status-card">
       <div class="status-row"><span class="status-key">Last active refresh</span><span class="status-value">{{ last_refresh_at or 'No run recorded' }}</span></div>

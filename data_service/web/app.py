@@ -717,6 +717,8 @@ def admin_data_status():
     active_cities = len([city for city in listings.distinct("CITY", {"MLS_STATUS": "ACTV"}) if city])
     active_with_details = listings.count_documents({"MLS_STATUS": "ACTV", "details": {"$exists": True}})
     active_missing_details = max(0, active_count - active_with_details)
+    sold_with_details = listings.count_documents({"MLS_STATUS": "SLD", "details": {"$exists": True}})
+    sold_missing_details = max(0, sold_count - sold_with_details)
 
     last_refresh = db.mls_runs.find_one(
         {"type": "search"},
@@ -747,6 +749,9 @@ def admin_data_status():
         active_with_details=active_with_details,
         active_missing_details=active_missing_details,
         detail_coverage_pct=round(active_with_details * 100 / active_count, 1) if active_count else 0,
+        sold_with_details=sold_with_details,
+        sold_missing_details=sold_missing_details,
+        sold_detail_coverage_pct=round(sold_with_details * 100 / sold_count, 1) if sold_count else 0,
         last_refresh=last_refresh or {},
         last_refresh_at=iso((last_refresh or {}).get("timestamp")),
         session_age_minutes=session_age_minutes,
