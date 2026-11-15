@@ -139,6 +139,40 @@ def log_run(db, started_at: datetime, duration_s: float,
     })
 
 
+def start_gallery_backfill_run(db, total_candidates: int):
+    """Create an observable, resumable photo-gallery repair run record."""
+    now = datetime.now(timezone.utc)
+    return db.mls_runs.insert_one({
+        "type": "photo_gallery_backfill",
+        "status": "running",
+        "started_at": now,
+        "updated_at": now,
+        "total_candidates": total_candidates,
+        "processed": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "last_error": None,
+    }).inserted_id
+
+
+def update_gallery_backfill_run(db, run_id, *, processed: int, succeeded: int,
+                                failed: int, status: str = "running",
+                                last_error: str | None = None):
+    """Persist progress without exposing MLS records or credentials."""
+    updates = {
+        "status": status,
+        "updated_at": datetime.now(timezone.utc),
+        "processed": processed,
+        "succeeded": succeeded,
+        "failed": failed,
+    }
+    if last_error:
+        updates["last_error"] = last_error
+    if status != "running":
+        updates["finished_at"] = updates["updated_at"]
+    db.mls_runs.update_one({"_id": run_id}, {"$set": updates})
+
+
 # ── Main fetch loop ───────────────────────────────────────────────────────────
 
 def fetch_and_store_details(session: requests.Session,
@@ -196,7 +230,11 @@ def fetch_and_store_details(session: requests.Session,
         scope += " (invalid photo galleries only)"
     print(f"  {len(pending)} listings need details{scope}")
 
+    backfill_run_id = start_gallery_backfill_run(db, len(pending)) if refresh_photo_galleries else None
     success = fail = 0
+    processed = 0
+    last_error = None
+    stopped_for_storage = False
     for doc in pending:
         # Check before the first write and then every 100 records. Atlas's UI
         # can differ slightly from dbStats, so callers should leave headroom.
@@ -205,6 +243,7 @@ def fetch_and_store_details(session: requests.Session,
             used_mb = (stats.get("storageSize", 0) + stats.get("indexSize", 0)) / 1_000_000
             if used_mb >= stop_at_storage_mb:
                 print(f"  ⚠ Stopping before storage threshold: {used_mb:.1f} MB >= {stop_at_storage_mb:.1f} MB")
+                stopped_for_storage = True
                 break
         dcid       = doc.get("DCID", "")
         listing_id = doc.get("LISTING_ID", dcid)
@@ -247,15 +286,33 @@ def fetch_and_store_details(session: requests.Session,
             success += 1
 
         except MLSAuthenticationError:
+            if backfill_run_id:
+                update_gallery_backfill_run(
+                    db, backfill_run_id, processed=processed, succeeded=success,
+                    failed=fail, status="blocked_auth", last_error="MLS session rejected",
+                )
             raise
         except Exception as e:
             err = str(e)
+            last_error = err
             print(f"  ✗ {listing_id} (DCID={dcid}): {err}")
             log_listing(db, listing_id, dcid, 0, success=False, error=err)
             fail += 1
 
+        processed += 1
+        if backfill_run_id and (processed == 1 or processed % 25 == 0):
+            update_gallery_backfill_run(
+                db, backfill_run_id, processed=processed, succeeded=success,
+                failed=fail, last_error=last_error,
+            )
         time.sleep(RATE_LIMIT_SLEEP)
 
+    if backfill_run_id:
+        final_status = "stopped_storage_threshold" if stopped_for_storage else "complete"
+        update_gallery_backfill_run(
+            db, backfill_run_id, processed=processed, succeeded=success,
+            failed=fail, status=final_status, last_error=last_error,
+        )
     client.close()
     print(f"  Details stored: {success}  Failed: {fail}")
     return success, fail

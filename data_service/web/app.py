@@ -5,6 +5,7 @@ import os
 import uuid
 import time
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -720,6 +721,24 @@ def admin_data_status():
     active_missing_details = max(0, active_count - active_with_details)
     sold_with_details = listings.count_documents({"MLS_STATUS": "SLD", "details": {"$exists": True}})
     sold_missing_details = max(0, sold_count - sold_with_details)
+    gallery_eligible_query = {
+        "details.PRIMARY_PHOTO_URI": {"$exists": True, "$ne": ""},
+        "details.photocount": {"$gte": 2},
+    }
+    invalid_gallery_query = {
+        **gallery_eligible_query,
+        "photos": {"$not": re.compile(r"/HD_")},
+    }
+    gallery_eligible = listings.count_documents(gallery_eligible_query)
+    gallery_remaining = listings.count_documents(invalid_gallery_query)
+    gallery_verified = max(0, gallery_eligible - gallery_remaining)
+    latest_gallery_backfill = db.mls_runs.find_one(
+        {"type": "photo_gallery_backfill"},
+        {"_id": 0, "status": 1, "started_at": 1, "updated_at": 1,
+         "finished_at": 1, "total_candidates": 1, "processed": 1,
+         "succeeded": 1, "failed": 1, "last_error": 1},
+        sort=[("started_at", -1)],
+    ) or {}
 
     last_refresh = db.mls_runs.find_one(
         {"type": "search"},
@@ -767,6 +786,9 @@ def admin_data_status():
         }
 
     last_refresh_display = display_time((last_refresh or {}).get("timestamp"))
+    gallery_backfill_display = display_time(
+        latest_gallery_backfill.get("updated_at") or latest_gallery_backfill.get("started_at")
+    )
 
     return render_template(
         "admin_data_status.html",
@@ -779,6 +801,12 @@ def admin_data_status():
         sold_with_details=sold_with_details,
         sold_missing_details=sold_missing_details,
         sold_detail_coverage_pct=round(sold_with_details * 100 / sold_count, 1) if sold_count else 0,
+        gallery_eligible=gallery_eligible,
+        gallery_verified=gallery_verified,
+        gallery_remaining=gallery_remaining,
+        gallery_coverage_pct=round(gallery_verified * 100 / gallery_eligible, 1) if gallery_eligible else 0,
+        latest_gallery_backfill=latest_gallery_backfill,
+        gallery_backfill_display=gallery_backfill_display,
         last_refresh=last_refresh or {},
         last_refresh_display=last_refresh_display,
         session_age_minutes=session_age_minutes,
