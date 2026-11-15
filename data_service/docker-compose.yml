@@ -25,7 +25,9 @@ services:
   #     retries: 5
   #     start_period: 10s
 
-  # ── Scraper / importer (Selenium + cron + status UI) ──────────────────────
+  # ── Scraper / importer (request-only; safe for AWS) ───────────────────────
+  # The host cron invokes jobs in this container.  It never performs browser
+  # login: it reuses a valid authorized session from MongoDB.
   app:
     build:
       context: ./mls_service
@@ -34,12 +36,22 @@ services:
     restart: unless-stopped
     env_file:
       - env                      # MONGO_URI points to Atlas
-    environment:
-      HEADLESS: "true"
-    ports:
-      - "8081:8081"         # scraper status dashboard → http://localhost:8081
     volumes:
       - app_data:/app/data
+
+  # ── Manual MLS authentication (local only) ────────────────────────────────
+  # This is opt-in (`--profile auth`) and must never be deployed on AWS.
+  # It writes the authorized browser session to MongoDB for mls_app to reuse.
+  auth_token:
+    build:
+      context: ./mls_service
+      dockerfile: Dockerfile.auth_token
+    container_name: auth_token
+    profiles: ["auth"]
+    env_file:
+      - env
+    environment:
+      HEADLESS: "true"
 
   # ── Marketing content generator ───────────────────────────────────────────
   # Generates Reddit posts, Instagram captions, and blog post drafts using

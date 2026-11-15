@@ -31,19 +31,27 @@ if ps -ef | grep -q '[f]etch_details.py --active-only'; then
 fi
 
 cd "$DATA_SERVICE_DIR"
-docker cp mls_service/mls_session.py mls_web:/tmp/mls_session.py
-docker cp mls_service/search_and_store.py mls_web:/tmp/search_and_store.py
-docker exec mls_web python /tmp/search_and_store.py --active-only --market bay-area
+WORKER_CONTAINER="${MLS_WORKER_CONTAINER:-mls_app}"
+if ! docker inspect -f '{{.State.Running}}' "$WORKER_CONTAINER" 2>/dev/null | grep -qx true; then
+  # During deployment, preserve the established cron behavior until mls_app is
+  # online rather than silently skipping a refresh.
+  WORKER_CONTAINER="mls_web"
+  echo "[$(date -Is)] mls_app is unavailable; temporarily using mls_web"
+fi
+
+docker cp mls_service/mls_session.py "$WORKER_CONTAINER":/tmp/mls_session.py
+docker cp mls_service/search_and_store.py "$WORKER_CONTAINER":/tmp/search_and_store.py
+docker exec "$WORKER_CONTAINER" python /tmp/search_and_store.py --active-only --market bay-area
 
 # At one request/second this cap leaves room inside a 15-minute cadence while
 # still allowing a temporary backlog to drain.  Normal runs fetch only new
 # active records because already enriched records are excluded.
-docker cp mls_service/fetch_details.py mls_web:/tmp/fetch_details.py
-docker exec mls_web python /tmp/fetch_details.py --active-only --limit 450 --stop-at-storage-mb 4500
+docker cp mls_service/fetch_details.py "$WORKER_CONTAINER":/tmp/fetch_details.py
+docker exec "$WORKER_CONTAINER" python /tmp/fetch_details.py --active-only --limit 450 --stop-at-storage-mb 4500
 
 # Historical closed-sale details are not on the urgent active-inventory path,
 # but are essential for resale-pair research and later comparable analysis.
 # Fetch a bounded backlog each run; per-listing failures remain in detail_logs
 # for diagnosis rather than silently dropping records.
-docker exec mls_web python /tmp/fetch_details.py --closed-only --limit 450 --stop-at-storage-mb 4500
+docker exec "$WORKER_CONTAINER" python /tmp/fetch_details.py --closed-only --limit 450 --stop-at-storage-mb 4500
 echo "[$(date -Is)] live fetcher completed"

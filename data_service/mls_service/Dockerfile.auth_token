@@ -1,0 +1,24 @@
+# Local-only, manually-run MLS authentication helper.  It is intentionally a
+# separate image so Chromium is never part of the AWS scraper worker.
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        fonts-liberation \
+        fonts-noto-color-emoji \
+        chromium \
+        chromium-driver \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.worker.txt requirements.auth_token.txt ./
+RUN pip install --no-cache-dir -r requirements.auth_token.txt
+
+COPY get_cookies.py get_cookies_manual.py ./
+
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
+ENV HEADLESS=true
+
+# This service is invoked manually with `docker-compose run --rm auth_token`.
+CMD ["python", "/app/get_cookies.py"]
