@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Resale pair review — Flip Finder{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='detail.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='comparison.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='field-comparison.css') }}">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='detail.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='gallery-controls.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='comparison.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='field-comparison.css') }}">{% endblock %}
 {% block body %}
 <main class="workspace detail">
   <a class="back" href="/admin">← Back to review queue</a>
@@ -24,7 +24,14 @@
       <div class="panel-title"><span>{{ side }}</span><div><b>{{ price|money }}</b>{% if side == 'Resale side' %}<small class="realized-return">{{ flip.gross_spread|money }} · {{ flip.gross_roi|percent }} return</small>{% endif %}</div></div>
       {% if listing.photos %}
       <div class="gallery" data-gallery="{{ listing_id }}">
-        <img class="property-photo gallery-main" src="{{ listing.photos[0] }}" alt="{{ side }} listing photo">
+        <div class="gallery-stage">
+          <img class="property-photo gallery-main" src="{{ listing.photos[0] }}" alt="{{ side }} listing photo 1 of {{ listing.photos|length }}">
+          {% if listing.photos|length > 1 %}
+          <button type="button" class="gallery-control gallery-previous" aria-label="Previous {{ side|lower }} photo" disabled>←</button>
+          <button type="button" class="gallery-control gallery-next" aria-label="Next {{ side|lower }} photo">→</button>
+          <span class="gallery-counter" aria-live="polite">1 / {{ listing.photos|length }}</span>
+          {% endif %}
+        </div>
         {% if listing.photos|length > 1 %}<div class="photo-strip" aria-label="{{ side }} listing photos">{% for photo in listing.photos %}<button type="button" class="photo-thumb {% if loop.first %}selected{% endif %}" data-photo="{{ photo }}" aria-label="Show photo {{ loop.index }}"><img src="{{ photo }}" alt="{{ side }} photo {{ loop.index }}" loading="lazy"></button>{% endfor %}</div>{% endif %}
       </div>
       {% else %}<div class="photo-empty">No authorized photo reference available</div>{% endif %}
@@ -44,20 +51,46 @@
 <script>
   document.querySelectorAll('.gallery').forEach((gallery) => {
     const main = gallery.querySelector('.gallery-main');
-    gallery.querySelectorAll('.photo-thumb').forEach((thumb) => {
+    const previous = gallery.querySelector('.gallery-previous');
+    const next = gallery.querySelector('.gallery-next');
+    const counter = gallery.querySelector('.gallery-counter');
+    let thumbs = Array.from(gallery.querySelectorAll('.photo-thumb'));
+    let current = 0;
+
+    const showPhoto = (index) => {
+      thumbs = Array.from(gallery.querySelectorAll('.photo-thumb'));
+      if (!thumbs.length) return;
+      current = Math.max(0, Math.min(index, thumbs.length - 1));
+      const thumb = thumbs[current];
+      const previousPhoto = main.src;
+      main.onerror = () => {
+        main.onerror = null;
+        thumb.remove();
+        showPhoto(Math.min(current, thumbs.length - 2));
+        if (!gallery.querySelector('.photo-thumb')) main.src = previousPhoto;
+      };
+      main.src = thumb.dataset.photo;
+      main.alt = thumb.getAttribute('aria-label').replace('Show ', '') + ' of ' + thumbs.length;
+      thumbs.forEach((item) => item.classList.remove('selected'));
+      thumb.classList.add('selected');
+      if (previous) previous.disabled = current === 0;
+      if (next) next.disabled = current === thumbs.length - 1;
+      if (counter) counter.textContent = (current + 1) + ' / ' + thumbs.length;
+      thumb.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    };
+
+    if (previous) previous.addEventListener('click', () => showPhoto(current - 1));
+    if (next) next.addEventListener('click', () => showPhoto(current + 1));
+    thumbs.forEach((thumb, index) => {
       thumb.addEventListener('click', () => {
-        const previousPhoto = main.src;
-        main.onerror = () => {
-          main.onerror = null;
-          main.src = previousPhoto;
-          thumb.remove();
-        };
-        main.src = thumb.dataset.photo;
-        gallery.querySelectorAll('.photo-thumb').forEach((item) => item.classList.remove('selected'));
-        thumb.classList.add('selected');
+        showPhoto(index);
       });
       const image = thumb.querySelector('img');
-      image.addEventListener('error', () => thumb.remove());
+      image.addEventListener('error', () => {
+        const removedCurrent = thumb.classList.contains('selected');
+        thumb.remove();
+        if (removedCurrent) showPhoto(current);
+      });
     });
   });
 </script>
