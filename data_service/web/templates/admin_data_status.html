@@ -75,6 +75,25 @@
       <div class="subtext">{{ '{:,}'.format(sold_with_details) }} enriched · {{ '{:,}'.format(sold_missing_details) }} awaiting details</div>
     </section>
 
+    <div class="section-title">Photo gallery backfill</div>
+    <section class="status-card">
+      <div class="d-flex justify-content-between align-items-baseline mb-2">
+        <strong>Listings with complete MLS galleries</strong>
+        <strong class="{{ 'good' if gallery_coverage_pct >= 95 else 'warn' }}">{{ gallery_coverage_pct }}%</strong>
+      </div>
+      <div class="progress mb-2"><div class="progress-bar {{ 'bg-success' if gallery_coverage_pct >= 95 else 'bg-warning' }}" style="width: {{ gallery_coverage_pct }}%"></div></div>
+      <div class="subtext">{{ '{:,}'.format(gallery_verified) }} verified · {{ '{:,}'.format(gallery_remaining) }} awaiting repair</div>
+
+      <div class="status-row mt-3"><span class="status-key">Latest backfill</span><span class="status-value">{{ gallery_backfill_display.relative }}{% if gallery_backfill_display.absolute %}<span class="subtext d-block">{{ gallery_backfill_display.absolute }}</span>{% endif %}</span></div>
+      <div class="status-row"><span class="status-key">Run state</span><span class="status-value {{ 'bad' if latest_gallery_backfill.get('status') == 'blocked_auth' else ('good' if latest_gallery_backfill.get('status') in ['running', 'complete'] else 'warn') }}">{{ latest_gallery_backfill.get('status', 'Not started').replace('_', ' ').title() }}</span></div>
+      {% if latest_gallery_backfill %}
+      <div class="status-row"><span class="status-key">This run</span><span class="status-value">{{ '{:,}'.format(latest_gallery_backfill.get('processed', 0)) }} / {{ '{:,}'.format(latest_gallery_backfill.get('total_candidates', 0)) }} processed</span></div>
+      <div class="status-row"><span class="status-key">Successful galleries</span><span class="status-value good">{{ '{:,}'.format(latest_gallery_backfill.get('succeeded', 0)) }}</span></div>
+      <div class="status-row"><span class="status-key">Unresolved</span><span class="status-value {{ 'bad' if latest_gallery_backfill.get('failed', 0) else 'good' }}">{{ '{:,}'.format(latest_gallery_backfill.get('failed', 0)) }}</span></div>
+      {% if latest_gallery_backfill.get('last_error') %}<div class="status-row"><span class="status-key">Last backfill error</span><span class="status-value bad">{{ latest_gallery_backfill.get('last_error') }}</span></div>{% endif %}
+      {% endif %}
+    </section>
+
     <div class="section-title">Refresh health</div>
     <section class="status-card">
       <div class="status-row"><span class="status-key">Last active refresh</span><span class="status-value">{{ last_refresh_display.relative }}{% if last_refresh_display.absolute %}<span class="subtext d-block">{{ last_refresh_display.absolute }}</span>{% endif %}</span></div>

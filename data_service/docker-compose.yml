@@ -38,6 +38,10 @@ services:
       - env                      # MONGO_URI points to Atlas
     volumes:
       - app_data:/app/data
+    # The legacy Docker daemon on AWS blocks Python's MongoDB monitor thread
+    # with its default seccomp profile.  Match the existing web services.
+    security_opt:
+      - seccomp=unconfined
 
   # ── Manual MLS authentication (local only) ────────────────────────────────
   # This is opt-in (`--profile auth`) and must never be deployed on AWS.
