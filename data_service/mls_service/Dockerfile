@@ -5,6 +5,9 @@ FROM python:3.12-slim
 
 # ── Python dependencies ───────────────────────────────────────────────────────
 WORKDIR /app
+# Docker 18.09 on the AWS host applies an old seccomp profile during builds
+# that blocks pip's progress-rendering thread.  Plain output is compatible.
+ENV PIP_PROGRESS_BAR=off
 COPY requirements.worker.txt .
 RUN pip install --no-cache-dir -r requirements.worker.txt
 
