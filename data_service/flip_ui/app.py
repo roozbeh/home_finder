@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import os
 import secrets
+import json
+import re
 from datetime import datetime, timezone
 from functools import wraps
-from urllib.parse import urlencode
+from html import unescape
+from urllib.parse import urlencode, urljoin
 
 from flask import Flask, abort, redirect, render_template, request, session, url_for
 from pymongo import MongoClient
@@ -95,7 +98,72 @@ def parse_date(value: str | None) -> datetime | None:
 
 
 def money(value) -> str:
-    return f"${float(value):,.0f}" if value is not None else "—"
+    if value in (None, ""):
+        return "—"
+    try:
+        amount = float(str(value).replace("$", "").replace(",", ""))
+    except (TypeError, ValueError):
+        return str(value)
+    return f"${amount:,.0f}"
+
+
+def _bcard_value(value) -> tuple[str | None, str | None]:
+    """Turn ConnectMLS javascript-link metadata into safe, readable text.
+
+    Detail exports represent a person or office as a structured value whose
+    ``href`` is a JavaScript ``openWindow`` call.  Showing that serialization
+    makes the comparison table unreadable.  The name is still observed MLS
+    data, and the optional link opens the same authenticated MLS card.
+    """
+    if not isinstance(value, dict) or not value.get("html"):
+        return None, None
+    name = re.sub(r"<[^>]+>", "", unescape(str(value["html"]))).strip()
+    if not name:
+        return None, None
+    href = str(value.get("href") or "")
+    match = re.search(r"openWindow\(['\"]([^'\"]+)", href)
+    if not match:
+        return name, None
+    # The card requires the viewer's own authorized ConnectMLS session.
+    return name, urljoin("https://bridge.connectmls.com/", match.group(1))
+
+
+def _display_value(value) -> str | None:
+    """Create compact display text without discarding the underlying record."""
+    if value in (None, ""):
+        return None
+    name, _ = _bcard_value(value)
+    if name:
+        return name
+    if isinstance(value, datetime):
+        return value.strftime("%b %d, %Y, %-I:%M %p %Z")
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, default=str, ensure_ascii=False)
+    return str(value)
+
+
+def _gallery_photo_urls(primary_photo: object, photo_count: object) -> list[str]:
+    """Build ConnectMLS gallery URLs from its numbered primary image filename.
+
+    ConnectMLS supplies e.g. ``..._41150001_1.JPEG``.  The image number is
+    part of that filename (not a following URL segment), so replacing it is
+    necessary to reach images 2..N.
+    """
+    if not isinstance(primary_photo, str) or not primary_photo.startswith("https://"):
+        return []
+    try:
+        count = int(photo_count or 0)
+    except (TypeError, ValueError):
+        count = 0
+    if count < 1:
+        return [primary_photo]
+    match = re.search(r"_(\d+)(\.[A-Za-z0-9]+)$", primary_photo)
+    if not match:
+        return [primary_photo]
+    return [
+        f"{primary_photo[:match.start(1)]}{index}{primary_photo[match.end(1):]}"
+        for index in range(1, count + 1)
+    ]
 
 
 def label_map(result_db, pair_keys: list[str]) -> dict[str, dict]:
@@ -113,17 +181,57 @@ def label_map(result_db, pair_keys: list[str]) -> dict[str, dict]:
 def listing_view(document: dict | None) -> dict:
     document = document or {}
     details = document.get("details") or {}
-    photos = document.get("photos") or []
-    if not photos and details.get("PRIMARY_PHOTO_URI"):
-        photos = [details["PRIMARY_PHOTO_URI"]]
-    photos = [photo for photo in photos if isinstance(photo, str) and photo.startswith("https://")][:8]
+    primary_photo = details.get("PRIMARY_PHOTO_URI")
+    stored_photos = document.get("photos") or []
+    # Full gallery references from the authorized photo-detail fetcher use
+    # HD_ filenames. Older path-index attempts are intentionally ignored.
+    photos = [photo for photo in stored_photos if isinstance(photo, str) and "/HD_" in photo]
+    if not photos:
+        photos = _gallery_photo_urls(primary_photo, details.get("photocount"))
+    photos = list(dict.fromkeys(
+        photo for photo in photos if isinstance(photo, str) and photo.startswith("https://")
+    ))
     field = lambda name: document.get(name) if document.get(name) not in (None, "") else details.get(name)
+    description_fields = ("PUBLIC_REMARKS", "DESCRIPTION", "REMARKS", "PUBLIC_DESCRIPTION")
+    description = next(
+        (field(name) for name in description_fields if field(name) not in (None, "")), None
+    )
+    excluded_fields = {"_id", "_history", "details", "photos", "LPHOTOS", "TINYPROPPHOTO_ONELINE", "TOOLS"}
+
+    def display_fields(payload: dict):
+        rows = []
+        for key, value in sorted(payload.items()):
+            if key in excluded_fields:
+                continue
+            text = _display_value(value)
+            if text is not None:
+                rows.append({"key": key, "label": key.replace("_", " ").title(), "value": text})
+        return rows
+
+    detail_fields = display_fields(details)
+    top_level_fields = [row for row in display_fields(document) if row["key"] not in details]
+    field_map = {row["key"]: row for row in top_level_fields}
+    field_map.update({row["key"]: row for row in detail_fields})
+    agent_card_fields = (
+        ("Buyer agent", "BUYER_AGENT_NAME_BCARD"),
+        ("Co-buyer agent", "CO_BUYER_AGENT_NAME_BCARD"),
+        ("Listing agent", "LIST_AGENT_NAME_BCARD"),
+        ("Co-listing agent", "COLISTERNAME_BCARD"),
+        ("Buyer office", "BUYER_OFFICE_NAME_BCARD"),
+        ("Listing office", "LIST_OFFICE_BCARD"),
+    )
+    agent_cards = []
+    for label, key in agent_card_fields:
+        name, href = _bcard_value(details.get(key) or document.get(key))
+        if name:
+            agent_cards.append({"label": label, "name": name, "href": href})
     return {
         "listing_id": document.get("LISTING_ID"),
         "address": field("STREET_ADDRESS") or "Address unavailable",
         "city": field("CITY"),
         "zip_code": field("POSTAL_CODE") or field("ZIP") or field("ZIP_CODE"),
-        "price": field("CLOSE_PRICE") or field("LIST_PRICE"),
+        "list_price": field("LIST_PRICE") or field("DISPLAY_PRICE") or field("ORIGINAL_PRICE"),
+        "sold_price": field("CLOSE_PRICE"),
         "close_date": field("CLOSE_DATE"),
         "beds": field("BEDROOMS_TOTAL"),
         "baths": field("BATHROOMS_FULL"),
@@ -131,7 +239,34 @@ def listing_view(document: dict | None) -> dict:
         "year_built": field("YEAR_BUILT"),
         "property_type": field("PROPERTY_TYPE") or field("BUILDING_TYPE"),
         "photos": photos,
+        "description": description,
+        "detail_fields": detail_fields,
+        "top_level_fields": top_level_fields,
+        "field_map": field_map,
+        "agent_cards": agent_cards,
     }
+
+
+def compare_listing_fields(buy: dict, sell: dict) -> tuple[list[dict], list[dict]]:
+    """Separate observed field changes from values shared by both MLS records."""
+    buy_fields = buy["field_map"]
+    sell_fields = sell["field_map"]
+    changed, unchanged = [], []
+    for key in sorted(set(buy_fields) | set(sell_fields), key=lambda value: value.replace("_", " ")):
+        purchase = buy_fields.get(key)
+        resale = sell_fields.get(key)
+        row = {
+            "key": key,
+            "label": (purchase or resale)["label"],
+            "buy_value": purchase["value"] if purchase else "—",
+            "sell_value": resale["value"] if resale else "—",
+        }
+        if row["buy_value"] == row["sell_value"]:
+            row["value"] = row["buy_value"]
+            unchanged.append(row)
+        else:
+            changed.append(row)
+    return changed, unchanged
 
 
 @app.template_filter("money")
@@ -216,23 +351,53 @@ def flip_list():
     elif requested_label in {"success_flip", "failed_flip"}:
         query["pair_key"] = {"$in": list(label_keys)}
 
+    sort_fields = {
+        "buy_price": "buy_price",
+        "sell_price": "sell_price",
+        "gross_spread": "gross_spread",
+        "hold_days": "hold_days",
+        "label": "label",
+    }
+    sort_by = args.get("sort", "sell_date")
+    if sort_by not in {*sort_fields, "sell_date"}:
+        sort_by = "sell_date"
+    sort_direction = 1 if args.get("direction") == "asc" else -1
     page = max(1, request.args.get("page", 1, type=int))
     per_page = 50
     total = result_db.flipdb.count_documents(query)
-    rows = list(result_db.flipdb.find(
-        query,
-        {"_id": 0, "pair_key": 1, "city": 1, "subdivision": 1, "buy_price": 1,
-         "sell_price": 1, "buy_date": 1, "sell_date": 1, "hold_days": 1,
-         "gross_spread": 1, "gross_roi": 1, "confidence": 1, "buy_mls": 1,
-         "sell_mls": 1},
-    ).sort("sell_date", -1).skip((page - 1) * per_page).limit(per_page))
+    projection = {"_id": 0, "pair_key": 1, "city": 1, "subdivision": 1, "buy_price": 1,
+                  "sell_price": 1, "buy_date": 1, "sell_date": 1, "hold_days": 1,
+                  "gross_spread": 1, "gross_roi": 1, "confidence": 1, "buy_mls": 1,
+                  "sell_mls": 1}
+    if sort_by == "label":
+        rows = list(result_db.flipdb.aggregate([
+            {"$match": query},
+            {"$lookup": {"from": "flip_labels", "localField": "pair_key",
+                         "foreignField": "pair_key", "as": "_label"}},
+            {"$set": {"_sort_label": {"$ifNull": [{"$arrayElemAt": ["$_label.label", 0]}, "unlabeled"]}}},
+            {"$sort": {"_sort_label": sort_direction, "sell_date": -1}},
+            {"$skip": (page - 1) * per_page}, {"$limit": per_page},
+            {"$project": projection},
+        ]))
+    else:
+        rows = list(result_db.flipdb.find(query, projection).sort(
+            [(sort_by, sort_direction), ("sell_date", -1)]
+        ).skip((page - 1) * per_page).limit(per_page))
     for row in rows:
         row["label"] = labels.get(row["pair_key"], {}).get("label", "unlabeled")
     cities = sorted(city for city in result_db.flipdb.distinct("city", {"active": True}) if city)
     preserved = {key: value for key, value in args.items() if key != "page" and value}
+    sort_links = {}
+    for field in sort_fields:
+        next_direction = "asc" if field != sort_by or sort_direction == -1 else "desc"
+        sort_links[field] = urlencode({
+            **{key: value for key, value in preserved.items() if key not in {"sort", "direction"}},
+            "sort": field, "direction": next_direction,
+        })
     return render_template(
         "list.html", rows=rows, cities=cities, filters=args, total=total,
         page=page, has_next=page * per_page < total, previous_query=urlencode(preserved),
+        sort_by=sort_by, sort_direction=sort_direction, sort_links=sort_links,
     )
 
 
@@ -245,25 +410,16 @@ def flip_detail(pair_key: str):
         abort(404)
     labels = label_map(result_db, [pair_key])
     listing_ids = [flip["buy_mls"], flip["sell_mls"]]
-    projection = {
-        "_id": 0, "LISTING_ID": 1, "STREET_ADDRESS": 1, "CITY": 1,
-        "POSTAL_CODE": 1, "ZIP": 1, "ZIP_CODE": 1, "CLOSE_PRICE": 1,
-        "CLOSE_DATE": 1, "LIST_PRICE": 1, "BEDROOMS_TOTAL": 1,
-        "BATHROOMS_FULL": 1, "SQFT": 1, "YEAR_BUILT": 1,
-        "PROPERTY_TYPE": 1, "BUILDING_TYPE": 1, "photos": 1,
-        "details.PRIMARY_PHOTO_URI": 1, "details.CLOSE_PRICE": 1,
-        "details.CLOSE_DATE": 1, "details.BEDROOMS_TOTAL": 1,
-        "details.BATHROOMS_FULL": 1, "details.SQFT": 1,
-        "details.YEAR_BUILT": 1, "details.PROPERTY_TYPE": 1,
-    }
     records = {
         row.get("LISTING_ID"): row
-        for row in source_db.mls_listings.find({"LISTING_ID": {"$in": listing_ids}}, projection)
+        for row in source_db.mls_listings.find({"LISTING_ID": {"$in": listing_ids}})
     }
+    buy = listing_view(records.get(flip["buy_mls"]))
+    sell = listing_view(records.get(flip["sell_mls"]))
+    changed_fields, unchanged_fields = compare_listing_fields(buy, sell)
     return render_template(
         "detail.html", flip=flip, label=labels.get(pair_key),
-        buy=listing_view(records.get(flip["buy_mls"])),
-        sell=listing_view(records.get(flip["sell_mls"])),
+        buy=buy, sell=sell, changed_fields=changed_fields, unchanged_fields=unchanged_fields,
     )
 
 

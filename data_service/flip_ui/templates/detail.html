@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Resale pair review — Flip Finder{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='detail.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='comparison.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='field-comparison.css') }}">{% endblock %}
 {% block body %}
 <main class="workspace detail">
   <a class="back" href="/admin">← Back to review queue</a>
@@ -11,6 +12,7 @@
     </div>
     <div class="metric"><span>Observed gross spread</span><strong class="{{ 'positive' if flip.gross_spread >= 0 else 'negative' }}">{{ flip.gross_spread|money }}</strong><small>{{ flip.gross_roi|percent }} gross ROI · not net profit</small></div>
   </header>
+  <section class="transaction-ids"><span>Purchase MLS <b>{{ flip.buy_mls }}</b></span><span>Resale MLS <b>{{ flip.sell_mls }}</b></span></section>
   <section class="label-panel">
     <div><span class="label {{ label.label if label else 'unlabeled' }}">{{ (label.label if label else 'unlabeled').replace('_',' ') }}</span>{% if label and label.updated_at %}<small>Last labeled {{ label.updated_at|dateonly }}</small>{% endif %}</div>
     <form action="{{ url_for('save_label', pair_key=flip.pair_key) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button name="label" value="success_flip" class="button success" type="submit">Mark success flip</button><button name="label" value="failed_flip" class="button danger" type="submit">Mark failed flip</button><button name="label" value="unlabeled" class="button ghost" type="submit">Clear label</button></form>
@@ -19,12 +21,44 @@
   <section class="pair-grid">
     {% for side, listing, price, close_date, listing_id in [('Purchase side', buy, flip.buy_price, flip.buy_date, flip.buy_mls), ('Resale side', sell, flip.sell_price, flip.sell_date, flip.sell_mls)] %}
     <article class="listing-panel {% if side == 'Resale side' %}resale{% endif %}">
-      <div class="panel-title"><span>{{ side }}</span><b>{{ price|money }}</b></div>
-      {% if listing.photos %}<img class="property-photo" src="{{ listing.photos[0] }}" alt="{{ side }} listing photo">{% else %}<div class="photo-empty">No authorized photo reference available</div>{% endif %}
+      <div class="panel-title"><span>{{ side }}</span><div><b>{{ price|money }}</b>{% if side == 'Resale side' %}<small class="realized-return">{{ flip.gross_spread|money }} · {{ flip.gross_roi|percent }} return</small>{% endif %}</div></div>
+      {% if listing.photos %}
+      <div class="gallery" data-gallery="{{ listing_id }}">
+        <img class="property-photo gallery-main" src="{{ listing.photos[0] }}" alt="{{ side }} listing photo">
+        {% if listing.photos|length > 1 %}<div class="photo-strip" aria-label="{{ side }} listing photos">{% for photo in listing.photos %}<button type="button" class="photo-thumb {% if loop.first %}selected{% endif %}" data-photo="{{ photo }}" aria-label="Show photo {{ loop.index }}"><img src="{{ photo }}" alt="{{ side }} photo {{ loop.index }}" loading="lazy"></button>{% endfor %}</div>{% endif %}
+      </div>
+      {% else %}<div class="photo-empty">No authorized photo reference available</div>{% endif %}
       <h2>{{ listing.address }}</h2><p>{{ listing.city }} {{ listing.zip_code or '' }}</p>
-      <dl><dt>MLS</dt><dd>{{ listing_id }}</dd><dt>Closed</dt><dd>{{ close_date|dateonly }}</dd><dt>Home</dt><dd>{{ listing.beds or '—' }} bd · {{ listing.baths or '—' }} ba · {{ listing.sqft or '—' }} sqft</dd><dt>Built</dt><dd>{{ listing.year_built or '—' }}</dd><dt>Type</dt><dd>{{ listing.property_type or '—' }}</dd></dl>
+      <dl><dt>MLS ID</dt><dd>{{ listing_id }}</dd><dt>List price</dt><dd>{{ listing.list_price|money }}</dd><dt>Sold price</dt><dd>{{ listing.sold_price|money }}</dd><dt>Closed</dt><dd>{{ close_date|dateonly }}</dd><dt>Home</dt><dd>{{ listing.beds or '—' }} bd · {{ listing.baths or '—' }} ba · {{ listing.sqft or '—' }} sqft</dd><dt>Built</dt><dd>{{ listing.year_built or '—' }}</dd><dt>Type</dt><dd>{{ listing.property_type or '—' }}</dd></dl>
+      {% if listing.agent_cards %}<section class="agent-cards" aria-label="MLS agent and office references">{% for card in listing.agent_cards %}<div class="agent-card"><small>{{ card.label }}</small>{% if card.href %}<a href="{{ card.href }}" target="_blank" rel="noopener noreferrer">{{ card.name }} <span aria-hidden="true">↗</span></a>{% else %}<strong>{{ card.name }}</strong>{% endif %}</div>{% endfor %}</section>{% endif %}
+      {% if listing.description %}<section class="description"><h3>Listing description</h3><p>{{ listing.description }}</p></section>{% endif %}
     </article>
     {% endfor %}
   </section>
+  <section class="comparison-section">
+    <div class="comparison-heading"><div><p class="eyebrow">MLS RECORD COMPARISON</p><h2>What changed</h2></div><span>{{ changed_fields|length }} observed field changes</span></div>
+    <div class="comparison-table-wrap"><table class="comparison-table"><thead><tr><th>Field</th><th>Purchase MLS · {{ flip.buy_mls }}</th><th>Resale MLS · {{ flip.sell_mls }}</th></tr></thead><tbody>{% for field in changed_fields %}<tr><td>{{ field.label }}</td><td>{{ field.buy_value }}</td><td>{{ field.sell_value }}</td></tr>{% else %}<tr><td colspan="3">No differing fields were available in the stored MLS records.</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+  <details class="all-fields unchanged-fields"><summary>Fields that stayed the same <span>{{ unchanged_fields|length }} fields</span></summary><div class="field-grid">{% for field in unchanged_fields %}<div><small>{{ field.label }}</small><p>{{ field.value }}</p></div>{% endfor %}</div></details>
 </main>
+<script>
+  document.querySelectorAll('.gallery').forEach((gallery) => {
+    const main = gallery.querySelector('.gallery-main');
+    gallery.querySelectorAll('.photo-thumb').forEach((thumb) => {
+      thumb.addEventListener('click', () => {
+        const previousPhoto = main.src;
+        main.onerror = () => {
+          main.onerror = null;
+          main.src = previousPhoto;
+          thumb.remove();
+        };
+        main.src = thumb.dataset.photo;
+        gallery.querySelectorAll('.photo-thumb').forEach((item) => item.classList.remove('selected'));
+        thumb.classList.add('selected');
+      });
+      const image = thumb.querySelector('img');
+      image.addEventListener('error', () => thumb.remove());
+    });
+  });
+</script>
 {% endblock %}

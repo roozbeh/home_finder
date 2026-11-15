@@ -1,0 +1,25 @@
+/* Keep purchase and resale values equally visible even when MLS text is long. */
+.comparison-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.comparison-table th:first-child,
+.comparison-table td:first-child { width: 18%; }
+
+.comparison-table th:nth-child(2),
+.comparison-table td:nth-child(2),
+.comparison-table th:nth-child(3),
+.comparison-table td:nth-child(3) { width: 41%; }
+
+.comparison-table th,
+.comparison-table td {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  vertical-align: top;
+}
+
+@media (max-width: 700px) {
+  .comparison-table { min-width: 650px; }
+}
