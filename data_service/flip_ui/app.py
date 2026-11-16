@@ -104,7 +104,7 @@ def money(value) -> str:
         amount = float(str(value).replace("$", "").replace(",", ""))
     except (TypeError, ValueError):
         return str(value)
-    return f"${amount:,.0f}"
+    return f"-${abs(amount):,.0f}" if amount < 0 else f"${amount:,.0f}"
 
 
 def _bcard_value(value) -> tuple[str | None, str | None]:
@@ -164,6 +164,60 @@ def _gallery_photo_urls(primary_photo: object, photo_count: object) -> list[str]
         f"{primary_photo[:match.start(1)]}{index}{primary_photo[match.end(1):]}"
         for index in range(1, count + 1)
     ]
+
+
+def _days_on_market(document: dict, details: dict) -> int | None:
+    """Return the observed MLS DOM/CDOM value when the listing supplied one."""
+    for key in ("DOM", "CDOM", "DAYS_ON_MARKET", "DAYS_ON_MKT"):
+        value = document.get(key)
+        if value in (None, ""):
+            value = details.get(key)
+        if value in (None, ""):
+            continue
+        match = re.search(r"-?\d+", str(value))
+        if match:
+            return int(match.group())
+    return None
+
+
+def categorized_photo_groups(result_db, pair_key: str) -> list[dict]:
+    """Prepare the manually sampled vision tags for the private comparison UI."""
+    labels = {
+        "exterior": "Outside",
+        "kitchen": "Kitchen",
+        "bathroom": "Bathroom",
+        "bedroom": "Bedroom",
+        "living_room": "Living room",
+        "dining_room": "Dining room",
+        "laundry": "Laundry",
+        "garage": "Garage",
+        "other": "Other spaces",
+    }
+    grouped = {key: {"buy": [], "sell": []} for key in labels}
+    rows = result_db.photo_classifications.find(
+        {"pair_key": pair_key},
+        {"_id": 0, "side": 1, "photo_url": 1, "photo_index": 1, "category": 1, "confidence": 1},
+    ).sort([("category", 1), ("side", 1), ("photo_index", 1)])
+    for row in rows:
+        category = row.get("category")
+        side = row.get("side")
+        if category not in grouped or side not in {"buy", "sell"} or not row.get("photo_url"):
+            continue
+        grouped[category][side].append(row)
+    return [
+        {"key": key, "label": label, **grouped[key]}
+        for key, label in labels.items()
+        if grouped[key]["buy"] or grouped[key]["sell"]
+    ]
+
+
+def renovation_insight(result_db, pair_key: str) -> dict | None:
+    """Return a previously reviewed, explicitly saved visual-cost assessment.
+
+    This deliberately does not synthesize an assessment on page load.  An
+    insight only becomes visible after a bounded, on-demand job has saved one.
+    """
+    return result_db.renovation_insights.find_one({"pair_key": pair_key}, {"_id": 0})
 
 
 def label_map(result_db, pair_keys: list[str]) -> dict[str, dict]:
@@ -233,6 +287,7 @@ def listing_view(document: dict | None) -> dict:
         "list_price": field("LIST_PRICE") or field("DISPLAY_PRICE") or field("ORIGINAL_PRICE"),
         "sold_price": field("CLOSE_PRICE"),
         "close_date": field("CLOSE_DATE"),
+        "days_on_market": _days_on_market(document, details),
         "beds": field("BEDROOMS_TOTAL"),
         "baths": field("BATHROOMS_FULL"),
         "sqft": field("SQFT"),
@@ -417,9 +472,12 @@ def flip_detail(pair_key: str):
     buy = listing_view(records.get(flip["buy_mls"]))
     sell = listing_view(records.get(flip["sell_mls"]))
     changed_fields, unchanged_fields = compare_listing_fields(buy, sell)
+    photo_category_groups = categorized_photo_groups(result_db, pair_key)
+    insight = renovation_insight(result_db, pair_key)
     return render_template(
         "detail.html", flip=flip, label=labels.get(pair_key),
         buy=buy, sell=sell, changed_fields=changed_fields, unchanged_fields=unchanged_fields,
+        photo_category_groups=photo_category_groups, insight=insight,
     )
 
 

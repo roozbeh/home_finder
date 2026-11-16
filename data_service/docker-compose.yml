@@ -57,6 +57,21 @@ services:
     environment:
       HEADLESS: "true"
 
+  # Manual-only, memory-capped vision worker. Start it explicitly with the
+  # photo-categorization profile; it never starts with the app stack.
+  photo_categorizer:
+    build:
+      context: ./photo_categorizer
+    container_name: photo_categorizer
+    profiles: ["photo-categorization"]
+    env_file:
+      - env
+    mem_limit: 512m
+    cpus: 0.50
+    read_only: true
+    tmpfs:
+      - /tmp
+
   # ── Marketing content generator ───────────────────────────────────────────
   # Generates Reddit posts, Instagram captions, and blog post drafts using
   # live MLS data + Claude. Run on demand — does not stay up.
