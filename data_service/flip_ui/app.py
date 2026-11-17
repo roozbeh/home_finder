@@ -23,6 +23,34 @@ SOURCE_DATABASE = os.environ.get("MONGO_DB", "mls")
 RESULT_DATABASE = os.environ.get("FLIPDB_DATABASE", "flip_finder")
 ADMIN_USERNAME = os.environ.get("FLIP_UI_ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("FLIP_UI_ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSWORD", "")
+DEMO_USERNAME = os.environ.get("FLIP_UI_DEMO_USERNAME", "")
+DEMO_PASSWORD = os.environ.get("FLIP_UI_DEMO_PASSWORD", "")
+DEMO_PAIR_KEYS = {
+    key.strip() for key in os.environ.get(
+        "FLIP_UI_DEMO_PAIR_KEYS",
+        "3d81304b124ad90a83dc697c75d4fc43019fff6fa600a213075a336caea727fe,"
+        "b2ecd3915d83ac3e9fb7e977381368232ef4a349edce0e013eb17e1f903b9163,"
+        "7200836edc784f8d3a9334c51911394d6331a301c4a308bc31c06dfda7414cc1,"
+        "c5a9190c7d85425fcd5b8e6328b0744c9333f58a04a43a5a9ad18945b917fac8,"
+        "14605f41e5ab26b2170003e3f049274f7d4d747e697447f06395cd95d0dadf07,"
+        "6dc5d6b65a06606399930991ee8f4e25a97d6d23f11e38c7d6aa48ef7f55cdf7,"
+        "3eb2160185d52404366a16f4d266b864bdd145a2f4c7c130d5dbdee812bbb34c,"
+        "ce1d82c1c75151c3b4a023f4cc70cfdb0a536e073d8b0702e78bc4239274de1a,"
+        "3ce45ce0c25b5a85f3c5e1ffbbed23dd1aec6ff41586a6e8c75d58592a6ceb10,"
+        "7eae2a23f45ea7af394aa62395d698386bc0b35b12ab17328933f767ad429405",
+    ).split(",") if key.strip()
+}
+
+# Demo MLS comparisons use an allowlist so agent-only fields cannot leak
+# through newly added MLS fields or the full-field comparison UI.
+DEMO_PUBLIC_FIELDS = {
+    "PUBLIC_REMARKS", "STREET_ADDRESS", "CITY", "POSTAL_CODE", "ZIP", "ZIP_CODE",
+    "LIST_PRICE", "DISPLAY_PRICE", "ORIGINAL_PRICE", "CLOSE_PRICE", "CLOSE_DATE",
+    "BEDROOMS_TOTAL", "BATHROOMS_FULL", "BATHROOMS_HALF", "SQFT", "YEAR_BUILT",
+    "PROPERTY_TYPE", "PROPERTY_SUBTYPE", "BUILDING_TYPE", "LOT_SQFT", "ACRES",
+    "HOA_FEE", "HOA_DISPLAY", "DOM", "CDOM", "DAYS_ON_MARKET", "DAYS_ON_MKT",
+    "RAW_STATUS", "STATUS", "GAR_DISPLAY", "BATHS_DISPLAY", "ROOMS_TOTAL",
+}
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLIP_UI_SECRET_KEY", "") or os.environ.get("SECRET_KEY", "")
@@ -77,6 +105,19 @@ def admin_required(view):
             return redirect(url_for("login", next=request.full_path))
         return view(*args, **kwargs)
     return wrapped
+
+
+def signed_in_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if session.get("flip_ui_role") not in {"admin", "demo"}:
+            return redirect(url_for("login", next=request.full_path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def demo_viewer() -> bool:
+    return session.get("flip_ui_role") == "demo"
 
 
 def parse_float(value: str | None) -> float | None:
@@ -232,21 +273,30 @@ def label_map(result_db, pair_keys: list[str]) -> dict[str, dict]:
     }
 
 
-def listing_view(document: dict | None) -> dict:
+def listing_view(document: dict | None, *, demo: bool = False) -> dict:
     document = document or {}
     details = document.get("details") or {}
     primary_photo = details.get("PRIMARY_PHOTO_URI")
     stored_photos = document.get("photos") or []
-    # Full gallery references from the authorized photo-detail fetcher use
-    # HD_ filenames. Older path-index attempts are intentionally ignored.
-    photos = [photo for photo in stored_photos if isinstance(photo, str) and "/HD_" in photo]
+    # Authorized gallery pages use ConnectMLS HD_ filenames, RAPMLS UUID-based
+    # bigphoto paths, or the MLSListings media CDN. Older numbered-path guesses
+    # match none of these formats.
+    photos = [
+        photo for photo in stored_photos
+        if isinstance(photo, str) and (
+            "/HD_" in photo or "/bigphoto/" in photo or
+            "media.mlslmedia.com/property/" in photo or
+            "bridgemls-assets.cdn-connectmls.com/pics/" in photo
+        )
+    ]
     if not photos:
         photos = _gallery_photo_urls(primary_photo, details.get("photocount"))
     photos = list(dict.fromkeys(
         photo for photo in photos if isinstance(photo, str) and photo.startswith("https://")
     ))
     field = lambda name: document.get(name) if document.get(name) not in (None, "") else details.get(name)
-    description_fields = ("PUBLIC_REMARKS", "DESCRIPTION", "REMARKS", "PUBLIC_DESCRIPTION")
+    description_fields = (("PUBLIC_REMARKS",) if demo else
+                          ("PUBLIC_REMARKS", "DESCRIPTION", "REMARKS", "PUBLIC_DESCRIPTION"))
     description = next(
         (field(name) for name in description_fields if field(name) not in (None, "")), None
     )
@@ -256,6 +306,8 @@ def listing_view(document: dict | None) -> dict:
         rows = []
         for key, value in sorted(payload.items()):
             if key in excluded_fields:
+                continue
+            if demo and key not in DEMO_PUBLIC_FIELDS:
                 continue
             text = _display_value(value)
             if text is not None:
@@ -275,7 +327,7 @@ def listing_view(document: dict | None) -> dict:
         ("Listing office", "LIST_OFFICE_BCARD"),
     )
     agent_cards = []
-    for label, key in agent_card_fields:
+    for label, key in (() if demo else agent_card_fields):
         name, href = _bcard_value(details.get(key) or document.get(key))
         if name:
             agent_cards.append({"label": label, "name": name, "href": href})
@@ -354,12 +406,19 @@ def login():
         validate_csrf()
         submitted_user = request.form.get("username", "")
         submitted_password = request.form.get("password", "")
-        if not ADMIN_PASSWORD:
+        if (DEMO_PASSWORD and DEMO_USERNAME
+                and secrets.compare_digest(submitted_user, DEMO_USERNAME)
+                and secrets.compare_digest(submitted_password, DEMO_PASSWORD)):
+            session.clear()
+            session["flip_ui_role"] = "demo"
+            return redirect(next_url if next_url.startswith("/") and not next_url.startswith("//") else url_for("flip_list"))
+        elif not ADMIN_PASSWORD:
             error = "Admin password is not configured on this server."
         elif (secrets.compare_digest(submitted_user, ADMIN_USERNAME)
               and secrets.compare_digest(submitted_password, ADMIN_PASSWORD)):
             session.clear()
             session["flip_ui_admin"] = True
+            session["flip_ui_role"] = "admin"
             return redirect(next_url if next_url.startswith("/") and not next_url.startswith("//") else url_for("flip_list"))
         else:
             error = "Incorrect username or password."
@@ -374,11 +433,13 @@ def logout():
 
 
 @app.route("/admin")
-@admin_required
+@signed_in_required
 def flip_list():
     _, result_db = _dbs()
     args = request.args
     query: dict = {"record_type": "observed_short_hold_resale", "active": True}
+    if demo_viewer():
+        query["pair_key"] = {"$in": sorted(DEMO_PAIR_KEYS)}
     city = args.get("city", "").strip().upper()
     if city:
         query["city"] = city
@@ -398,13 +459,16 @@ def flip_list():
         if value is not None:
             query.setdefault("buy_date", {})[operator] = value
 
-    requested_label = args.get("label", "unlabeled")
+    requested_label = args.get("label", "all" if demo_viewer() else "unlabeled")
     labels = label_map(result_db, list(result_db.flipdb.distinct("pair_key", query)))
     label_keys = {key for key, value in labels.items() if value.get("label") == requested_label}
     if requested_label == "unlabeled":
-        query["pair_key"] = {"$nin": list(labels)}
+        if demo_viewer():
+            query["pair_key"] = {"$in": [key for key in DEMO_PAIR_KEYS if key not in labels]}
+        else:
+            query["pair_key"] = {"$nin": list(labels)}
     elif requested_label in {"success_flip", "failed_flip"}:
-        query["pair_key"] = {"$in": list(label_keys)}
+        query["pair_key"] = {"$in": [key for key in label_keys if key in DEMO_PAIR_KEYS] if demo_viewer() else list(label_keys)}
 
     sort_fields = {
         "buy_price": "buy_price",
@@ -440,7 +504,8 @@ def flip_list():
         ).skip((page - 1) * per_page).limit(per_page))
     for row in rows:
         row["label"] = labels.get(row["pair_key"], {}).get("label", "unlabeled")
-    cities = sorted(city for city in result_db.flipdb.distinct("city", {"active": True}) if city)
+    city_query = {"active": True, **({"pair_key": {"$in": sorted(DEMO_PAIR_KEYS)}} if demo_viewer() else {})}
+    cities = sorted(city for city in result_db.flipdb.distinct("city", city_query) if city)
     preserved = {key: value for key, value in args.items() if key != "page" and value}
     sort_links = {}
     for field in sort_fields:
@@ -457,11 +522,13 @@ def flip_list():
 
 
 @app.route("/admin/flip/<pair_key>")
-@admin_required
+@signed_in_required
 def flip_detail(pair_key: str):
     source_db, result_db = _dbs()
     flip = result_db.flipdb.find_one({"pair_key": pair_key, "active": True}, {"_id": 0})
     if not flip:
+        abort(404)
+    if demo_viewer() and pair_key not in DEMO_PAIR_KEYS:
         abort(404)
     labels = label_map(result_db, [pair_key])
     listing_ids = [flip["buy_mls"], flip["sell_mls"]]
@@ -469,8 +536,8 @@ def flip_detail(pair_key: str):
         row.get("LISTING_ID"): row
         for row in source_db.mls_listings.find({"LISTING_ID": {"$in": listing_ids}})
     }
-    buy = listing_view(records.get(flip["buy_mls"]))
-    sell = listing_view(records.get(flip["sell_mls"]))
+    buy = listing_view(records.get(flip["buy_mls"]), demo=demo_viewer())
+    sell = listing_view(records.get(flip["sell_mls"]), demo=demo_viewer())
     changed_fields, unchanged_fields = compare_listing_fields(buy, sell)
     photo_category_groups = categorized_photo_groups(result_db, pair_key)
     insight = renovation_insight(result_db, pair_key)
