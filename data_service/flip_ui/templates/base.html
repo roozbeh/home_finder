@@ -8,6 +8,6 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='demo.css') }}">
   {% block extra_head %}{% endblock %}
 </head><body>
-  <nav class="nav"><a class="brand" href="/">FLIP<span>FINDER</span></a><div class="nav-links">{% if session.get('flip_ui_role') in ('admin','demo') %}<a href="/admin">{% if session.get('flip_ui_role') == 'demo' %}Demo properties{% else %}Review queue{% endif %}</a><form action="/admin/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="link-button">Sign out</button></form>{% endif %}</div></nav>
+  <nav class="nav"><a class="brand" href="/">FLIP<span>FINDER</span></a><div class="nav-links">{% if session.get('flip_ui_role') in ('admin','demo') %}<a href="/admin/active">Active properties</a><a href="/admin">{% if session.get('flip_ui_role') == 'demo' %}Demo properties{% else %}Review queue{% endif %}</a><form action="/admin/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="link-button">Sign out</button></form>{% endif %}</div></nav>
   {% block body %}{% endblock %}
 </body></html>

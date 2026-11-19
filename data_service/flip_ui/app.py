@@ -9,6 +9,7 @@ import os
 import secrets
 import json
 import re
+import math
 from datetime import datetime, timezone
 from functools import wraps
 from html import unescape
@@ -183,28 +184,9 @@ def _display_value(value) -> str | None:
     return str(value)
 
 
-def _gallery_photo_urls(primary_photo: object, photo_count: object) -> list[str]:
-    """Build ConnectMLS gallery URLs from its numbered primary image filename.
-
-    ConnectMLS supplies e.g. ``..._41150001_1.JPEG``.  The image number is
-    part of that filename (not a following URL segment), so replacing it is
-    necessary to reach images 2..N.
-    """
-    if not isinstance(primary_photo, str) or not primary_photo.startswith("https://"):
-        return []
-    try:
-        count = int(photo_count or 0)
-    except (TypeError, ValueError):
-        count = 0
-    if count < 1:
-        return [primary_photo]
-    match = re.search(r"_(\d+)(\.[A-Za-z0-9]+)$", primary_photo)
-    if not match:
-        return [primary_photo]
-    return [
-        f"{primary_photo[:match.start(1)]}{index}{primary_photo[match.end(1):]}"
-        for index in range(1, count + 1)
-    ]
+def _supplied_primary_photo(primary_photo: object) -> list[str]:
+    """Display only the literal MLS primary reference when the gallery is missing."""
+    return [primary_photo] if isinstance(primary_photo, str) and primary_photo.startswith('https://') else []
 
 
 def _days_on_market(document: dict, details: dict) -> int | None:
@@ -221,6 +203,24 @@ def _days_on_market(document: dict, details: dict) -> int | None:
     return None
 
 
+def observation_room(area: str, available_rooms: set[str]) -> str:
+    """Place room-specific claims first; show general finishes with living areas."""
+    area = area.lower().replace('_', ' ')
+    aliases = {
+        'exterior': ('exterior', 'outside', 'landscap', 'outdoor', 'roof'),
+        'kitchen': ('kitchen',), 'bathroom': ('bathroom', 'bath'),
+        'bedroom': ('bedroom',), 'living_room': ('living', 'family room'),
+        'dining_room': ('dining',), 'laundry': ('laundry',),
+        'garage': ('garage',), 'hallway': ('hallway', 'corridor'),
+    }
+    for room, terms in aliases.items():
+        if any(term in area for term in terms):
+            return room
+    if any(term in area for term in ('interior', 'wall', 'paint', 'floor', 'light', 'finish')):
+        return next((room for room in ('living_room', 'dining_room') if room in available_rooms), 'other')
+    return 'other'
+
+
 def categorized_photo_groups(result_db, pair_key: str) -> list[dict]:
     """Prepare the manually sampled vision tags for the private comparison UI."""
     labels = {
@@ -233,13 +233,19 @@ def categorized_photo_groups(result_db, pair_key: str) -> list[dict]:
         "laundry": "Laundry",
         "garage": "Garage",
         "other": "Other spaces",
+        "hallway": "Hallway",
     }
     grouped = {key: {"buy": [], "sell": []} for key in labels}
+    overrides = {(r['side'], r['photo_url']): r for r in result_db.photo_reviews.find({'pair_key': pair_key}, {'_id': 0})}
     rows = result_db.photo_classifications.find(
         {"pair_key": pair_key},
         {"_id": 0, "side": 1, "photo_url": 1, "photo_index": 1, "category": 1, "confidence": 1},
     ).sort([("category", 1), ("side", 1), ("photo_index", 1)])
     for row in rows:
+        row['ai_category'] = row.get('category')
+        review = overrides.get((row.get('side'), row.get('photo_url')), {})
+        row['category'] = review.get('category', row.get('category'))
+        row['review_note'] = review.get('note', '')
         category = row.get("category")
         side = row.get("side")
         if category not in grouped or side not in {"buy", "sell"} or not row.get("photo_url"):
@@ -258,7 +264,23 @@ def renovation_insight(result_db, pair_key: str) -> dict | None:
     This deliberately does not synthesize an assessment on page load.  An
     insight only becomes visible after a bounded, on-demand job has saved one.
     """
-    return result_db.renovation_insights.find_one({"pair_key": pair_key}, {"_id": 0})
+    insight = result_db.renovation_insights.find_one({"pair_key": pair_key}, {"_id": 0})
+    if not insight:
+        return None
+    review = result_db.insight_reviews.find_one({'pair_key': pair_key}, {'_id': 0}) or {}
+    insight['review'] = review
+    if 'renovation_low' in review:
+        lines = insight['financials']['lines']
+        renovation = next(line for line in lines if line['label'] == 'Cost of renovations')
+        old_mid = -renovation['amount']
+        low, high = review['renovation_low'], review['renovation_high']
+        midpoint = (low + high) / 2
+        baseline = insight['financials']['result_midpoint'] + old_mid
+        renovation.update(amount=-midpoint, range=f'{money(low)}–{money(high)}')
+        insight['financials'].update(result_midpoint=baseline-midpoint, result_range=f'Range with renovation estimate: {money(baseline-high)} to {money(baseline-low)}')
+        insight['scope'] = review.get('scope', insight['scope'])
+        insight['scope_note'] = review.get('scope_note', insight.get('scope_note', ''))
+    return insight
 
 
 def label_map(result_db, pair_keys: list[str]) -> dict[str, dict]:
@@ -284,13 +306,12 @@ def listing_view(document: dict | None, *, demo: bool = False) -> dict:
     photos = [
         photo for photo in stored_photos
         if isinstance(photo, str) and (
-            "/HD_" in photo or "/bigphoto/" in photo or
-            "media.mlslmedia.com/property/" in photo or
-            "bridgemls-assets.cdn-connectmls.com/pics/" in photo
+            "/HD_" in photo or bool(re.search(r"/bigphoto/[^?]+\.jpe?g(?:\?|$)", photo, re.I)) or
+            "media.mlslmedia.com/property/" in photo or bool(re.match(r"https://media\.crmls\.org/medias/[0-9a-fA-F-]{36}\.jpe?g", photo))
         )
     ]
     if not photos:
-        photos = _gallery_photo_urls(primary_photo, details.get("photocount"))
+        photos = _supplied_primary_photo(primary_photo)
     photos = list(dict.fromkeys(
         photo for photo in photos if isinstance(photo, str) and photo.startswith("https://")
     ))
@@ -379,6 +400,16 @@ def compare_listing_fields(buy: dict, sell: dict) -> tuple[list[dict], list[dict
 @app.template_filter("money")
 def money_filter(value):
     return money(value)
+
+
+@app.template_filter("improvement_bullets")
+def improvement_bullets(value):
+    """Format all saved scope explanations, including prose without semicolons."""
+    text = str(value or '').strip()
+    # Keep comma lists and parentheses together to retain qualifications such
+    # as "No evidence of structural, layout, or systems work".
+    parts = re.split(r';\s*|[\r\n]+|(?<=[.!?])\s+(?=[A-Z])|\s+(?=combined with\b)', text)
+    return [part.strip(' \t•') for part in parts if part.strip(' \t•')]
 
 
 @app.template_filter("percent")
@@ -541,11 +572,71 @@ def flip_detail(pair_key: str):
     changed_fields, unchanged_fields = compare_listing_fields(buy, sell)
     photo_category_groups = categorized_photo_groups(result_db, pair_key)
     insight = renovation_insight(result_db, pair_key)
+    room_labels = {'exterior':'Outside', 'kitchen':'Kitchen', 'bathroom':'Bathroom', 'bedroom':'Bedroom', 'living_room':'Living room', 'dining_room':'Dining room', 'laundry':'Laundry', 'garage':'Garage', 'hallway':'Hallway', 'other':'Other spaces'}
+    room_reviews = {r['room']: r for r in result_db.room_insight_reviews.find({'pair_key':pair_key}, {'_id':0})}
+    observations = {key: [] for key in room_labels}
+    available_rooms = {group['key'] for group in photo_category_groups}
+    for observation in (insight or {}).get('observations', []):
+        room = observation_room(observation.get('area', ''), available_rooms)
+        observations[room].append(observation)
+    groups = {g['key']: g for g in photo_category_groups}
+    for key, label in room_labels.items():
+        if observations[key] or key in room_reviews:
+            groups.setdefault(key, {'key':key,'label':label,'buy':[],'sell':[]})
+        if key in groups:
+            groups[key]['observations'] = observations[key]
+            groups[key]['review'] = room_reviews.get(key)
+    photo_category_groups = list(groups.values())
     return render_template(
         "detail.html", flip=flip, label=labels.get(pair_key),
         buy=buy, sell=sell, changed_fields=changed_fields, unchanged_fields=unchanged_fields,
-        photo_category_groups=photo_category_groups, insight=insight,
+        photo_category_groups=photo_category_groups, insight=insight, room_labels=room_labels,
     )
+
+
+@app.post('/admin/flip/<pair_key>/review/<kind>')
+@admin_required
+def save_review(pair_key, kind):
+    validate_csrf()
+    _, db = _dbs()
+    if not db.flipdb.find_one({'pair_key':pair_key, 'active':True}, {'_id':1}):
+        abort(404)
+    identity = {'pair_key':pair_key}
+    note = request.form.get('note', '').strip()
+    if len(note) > 4000:
+        abort(400)
+    if kind == 'photo':
+        identity.update(side=request.form.get('side'), photo_url=request.form.get('photo_url'))
+        original = db.photo_classifications.find_one(identity, {'_id':0})
+        category = request.form.get('category')
+        if not original or category not in {'exterior','kitchen','bathroom','bedroom','living_room','dining_room','laundry','garage','hallway','other'}:
+            abort(400)
+        collection, values = db.photo_reviews, {'category':category,'note':note}
+    elif kind == 'room':
+        room = request.form.get('room')
+        if room not in {'exterior','kitchen','bathroom','bedroom','living_room','dining_room','laundry','garage','hallway','other'}:
+            abort(400)
+        identity['room'] = room
+        text = request.form.get('text','').strip()
+        if len(text)>6000: abort(400)
+        original = db.renovation_insights.find_one({'pair_key':pair_key}, {'_id':0})
+        collection, values = db.room_insight_reviews, {'text':text,'note':note}
+    elif kind == 'cost':
+        low, high = parse_float(request.form.get('low')), parse_float(request.form.get('high'))
+        scope = request.form.get('scope')
+        if low is None or high is None or not math.isfinite(low) or not math.isfinite(high) or low<0 or high<low or scope not in {'Cosmetic','Moderate Interior','Substantial Rehab'}:
+            abort(400)
+        original = db.renovation_insights.find_one(identity, {'_id':0})
+        if not original: abort(404)
+        collection, values = db.insight_reviews, {'renovation_low':low,'renovation_high':high,'scope':scope,'scope_note':request.form.get('scope_note','')[:2000],'note':note}
+    else:
+        abort(404)
+    now = datetime.now(timezone.utc)
+    prior = collection.find_one(identity, {'_id':0})
+    event = {'kind':kind, **identity, 'before':prior, 'after':values, 'ai_snapshot':original, 'by':ADMIN_USERNAME, 'at':now}
+    db.review_events.insert_one(event)
+    collection.update_one(identity, {'$set':{**values,'updated_by':ADMIN_USERNAME,'updated_at':now}, '$setOnInsert':{**identity,'original_ai':original,'created_at':now}}, upsert=True)
+    return redirect(url_for('flip_detail', pair_key=pair_key))
 
 
 @app.post("/admin/flip/<pair_key>/label")
@@ -573,6 +664,10 @@ def save_label(pair_key: str):
             upsert=True,
         )
     return redirect(url_for("flip_detail", pair_key=pair_key))
+
+
+from active import register_active
+register_active(app, _dbs, signed_in_required, listing_view, demo_viewer)
 
 
 if __name__ == "__main__":

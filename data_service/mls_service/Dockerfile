@@ -15,6 +15,8 @@ RUN pip install --no-cache-dir -r requirements.worker.txt
 COPY mls_session.py .
 COPY search_and_store.py .
 COPY fetch_details.py .
+COPY repair_galleries.py .
+COPY gallery_progress.py .
 COPY entrypoint.worker.sh .
 RUN chmod +x /app/entrypoint.worker.sh
 
