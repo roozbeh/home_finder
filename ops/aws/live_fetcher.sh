@@ -54,4 +54,9 @@ docker exec "$WORKER_CONTAINER" python /tmp/fetch_details.py --active-only --lim
 # Fetch a bounded backlog each run; per-listing failures remain in detail_logs
 # for diagnosis rather than silently dropping records.
 docker exec "$WORKER_CONTAINER" python /tmp/fetch_details.py --closed-only --limit 450 --stop-at-storage-mb 4500
+# Resume a bounded photo-repair batch each cycle. The worker prioritizes demo
+# listings/comparables and maintains a lease to prevent overlapping repair jobs.
+docker cp mls_service/repair_galleries.py "$WORKER_CONTAINER":/tmp/repair_galleries.py
+docker cp mls_service/gallery_progress.py "$WORKER_CONTAINER":/tmp/gallery_progress.py
+docker exec "$WORKER_CONTAINER" python /tmp/repair_galleries.py --scope all --limit 100
 echo "[$(date -Is)] live fetcher completed"

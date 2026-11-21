@@ -22,6 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 MONGO_URI      = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB       = os.environ.get("MONGO_DB", "mls")
+FLIPDB_DATABASE = os.environ.get("FLIPDB_DATABASE", "flip_finder")
 ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 CALENDLY_URL   = "https://calendly.com/ruzbeh-o0w7/new-meeting"
 PAGE_SIZE      = 10
@@ -721,7 +722,17 @@ def admin_data_status():
     active_missing_details = max(0, active_count - active_with_details)
     sold_with_details = listings.count_documents({"MLS_STATUS": "SLD", "details": {"$exists": True}})
     sold_missing_details = max(0, sold_count - sold_with_details)
+    # Gallery repair is deliberately scoped to the listings used by FlipDB's
+    # observed purchase/resale pairs, not every historical MLS record.
+    flip_mls_ids = set()
+    flip_pairs = mongo[FLIPDB_DATABASE].flipdb
+    for field in ("buy_mls", "sell_mls"):
+        flip_mls_ids.update(
+            value.strip() for value in flip_pairs.distinct(field)
+            if isinstance(value, str) and value.strip()
+        )
     gallery_eligible_query = {
+        "LISTING_ID": {"$in": sorted(flip_mls_ids)},
         "details.PRIMARY_PHOTO_URI": {"$exists": True, "$ne": ""},
         "details.photocount": {"$gte": 2},
     }
@@ -736,7 +747,7 @@ def admin_data_status():
         {"type": "photo_gallery_backfill"},
         {"_id": 0, "status": 1, "started_at": 1, "updated_at": 1,
          "finished_at": 1, "total_candidates": 1, "processed": 1,
-         "succeeded": 1, "failed": 1, "last_error": 1},
+         "succeeded": 1, "failed": 1, "last_error": 1, "scope": 1},
         sort=[("started_at", -1)],
     ) or {}
 

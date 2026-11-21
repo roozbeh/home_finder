@@ -37,6 +37,8 @@ MONGO_DB   = os.environ.get("MONGO_DB", "mls")
 
 # Fields to skip when comparing for changes (HTML blobs, arrays, metadata)
 SKIP_FIELDS = {"SOURCE_MLS_CIRCLE", "TINYPROPPHOTO_ONELINE", "TOOLS", "LPHOTOS"}
+ENRICHED_FIELDS = {"photos", "details", "details_fetched", "photo_gallery_fetched",
+                   "photo_gallery_repair", "_id", "_history", "_inserted_at", "_updated_at"}
 
 # Fields to coerce from string to number for correct range queries
 NUMERIC_FIELDS = {
@@ -322,7 +324,9 @@ def upsert_listings(listings: list[dict]):
     inserted = updated = unchanged = 0
 
     for raw in listings:
-        listing = _coerce_types(raw)
+        # Search summaries must not overwrite gallery/detail enrichment.
+        listing = {key: value for key, value in _coerce_types(raw).items()
+                   if key not in ENRICHED_FIELDS}
         lid     = listing.get("LISTING_ID") or listing.get("DCID")
         if not lid:
             continue
@@ -334,6 +338,7 @@ def upsert_listings(listings: list[dict]):
             doc["_inserted_at"] = now
             doc["_updated_at"]  = now
             doc["_history"]     = []
+            doc["photo_gallery_repair"] = {"status": "pending", "queued_at": now}
             coll.insert_one(doc)
             inserted += 1
 

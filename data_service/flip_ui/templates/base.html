@@ -5,8 +5,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='demo.css') }}">
   {% block extra_head %}{% endblock %}
 </head><body>
-  <nav class="nav"><a class="brand" href="/">FLIP<span>FINDER</span></a><div class="nav-links">{% if session.get('flip_ui_admin') %}<a href="/admin">Review queue</a><form action="/admin/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="link-button">Sign out</button></form>{% endif %}</div></nav>
+  <nav class="nav"><a class="brand" href="/">FLIP<span>FINDER</span></a><div class="nav-links">{% if session.get('flip_ui_role') in ('admin','demo') %}<a href="/admin/active">Active properties</a><a href="/admin">{% if session.get('flip_ui_role') == 'demo' %}Demo properties{% else %}Review queue{% endif %}</a><form action="/admin/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="link-button">Sign out</button></form>{% endif %}</div></nav>
   {% block body %}{% endblock %}
 </body></html>

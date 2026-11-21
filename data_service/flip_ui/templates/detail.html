@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Resale pair review — Flip Finder{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='detail.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='gallery-controls.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='comparison.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='field-comparison.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='photo-categories.css') }}">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='detail.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='gallery-controls.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='comparison.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='field-comparison.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='photo-categories.css') }}"><link rel="stylesheet" href="{{ url_for('static',filename='review.css') }}">{% endblock %}
 {% block body %}
 <main class="workspace detail">
   <a class="back" href="/admin">← Back to review queue</a>
@@ -14,29 +14,25 @@
   </header>
   <section class="transaction-ids"><span>Purchase MLS <b>{{ flip.buy_mls }}</b></span><span>Resale MLS <b>{{ flip.sell_mls }}</b></span></section>
   <section class="label-panel">
-    <div><span class="label {{ label.label if label else 'unlabeled' }}">{{ (label.label if label else 'unlabeled').replace('_',' ') }}</span>{% if label and label.updated_at %}<small>Last labeled {{ label.updated_at|dateonly }}</small>{% endif %}</div>
-    <form action="{{ url_for('save_label', pair_key=flip.pair_key) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button name="label" value="success_flip" class="button success" type="submit">Mark success flip</button><button name="label" value="failed_flip" class="button danger" type="submit">Mark failed flip</button><button name="label" value="unlabeled" class="button ghost" type="submit">Clear label</button></form>
+    <div><span class="label {{ label.label if label else 'unlabeled' }}">{{ (label.label if label else 'unlabeled').replace('_',' ') }}</span>{% if session.get('flip_ui_role') == 'admin' and label and label.updated_at %}<small>Last labeled {{ label.updated_at|dateonly }}</small>{% endif %}</div>
+    {% if session.get('flip_ui_role') == 'admin' %}<form action="{{ url_for('save_label', pair_key=flip.pair_key) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button name="label" value="success_flip" class="button success" type="submit">Mark success flip</button><button name="label" value="failed_flip" class="button danger" type="submit">Mark failed flip</button><button name="label" value="unlabeled" class="button ghost" type="submit">Clear label</button></form>{% else %}<span class="demo-label-note">Read-only demo</span>{% endif %}
   </section>
   {% if insight %}
-  <section class="flip-insights" aria-labelledby="flip-insights-title">
-    <div class="flip-insights-heading">
-      <div><p class="eyebrow">EXPERIMENTAL · REVIEWED ESTIMATE</p><h2 id="flip-insights-title">Flip insights <span>(by AI)</span></h2></div>
-      <span class="insight-confidence {{ insight.confidence|lower }}">{{ insight.confidence|lower }} confidence</span>
-    </div>
-    <p class="insight-summary">{{ insight.summary }}</p>
-    {% if insight.observations %}<div class="insight-observations"><h3>Observed visible changes</h3><ul>{% for observation in insight.observations %}<li><strong>{{ observation.area }}</strong><span>{{ observation.detail }}</span></li>{% endfor %}</ul></div>{% endif %}
-    <div class="insight-scope"><span>Scope</span><strong>{{ insight.scope }}</strong><p>{{ insight.scope_note }}</p></div>
+  <section class="financial-review">
     <div class="insight-financials">
       <div class="insight-financials-heading"><div><h3>Estimated all-in result</h3><p>Uses observed MLS data and the assumptions below.</p></div><strong class="{{ 'negative' if insight.financials.result_midpoint < 0 else 'positive' }}">{{ insight.financials.result_midpoint|money }}</strong></div>
       <table class="financial-table"><thead><tr><th>Item</th><th>Default calculation for this flip</th></tr></thead><tbody>
-        {% for line in insight.financials.lines %}<tr><th scope="row">{{ line.label }}</th><td class="{{ 'negative' if line.amount < 0 else 'positive' }}"><strong>{{ line.amount|money }}</strong>{% if line.note %}<span>— {{ line.note }}</span>{% endif %}{% if line.range %}<span>— midpoint of {{ line.range }}</span>{% endif %}</td></tr>{% endfor %}
+        {% for line in insight.financials.lines if not (line.label == 'HOA carrying cost' and line.amount == 0) %}<tr><th scope="row">{{ line.label }}</th><td class="{{ 'negative' if line.amount < 0 else 'positive' }}"><strong>{{ line.amount|money }}</strong>{% if line.note %}<span>— {{ line.note }}</span>{% endif %}{% if line.range %}<span>— midpoint of {{ line.range }}</span>{% endif %}
+{% if line.label == 'Cost of renovations' %}{% if insight.scope_note %}<ul class="renovation-explanation">{% for improvement in insight.scope_note|improvement_bullets %}<li>{{ improvement }}</li>{% endfor %}</ul>{% endif %}
+{% if session.get('flip_ui_role') == 'admin' and insight.review.note %}<p>Reviewer note: {{ insight.review.note }}</p>{% endif %}
+{% if session.get('flip_ui_role') == 'admin' %}<details class="review-editor"><summary>Edit renovation estimate</summary><form method="post" action="{{ url_for('save_review',pair_key=flip.pair_key,kind='cost') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Low estimate ($)<input name="low" type="number" min="0" step="1" required value="{{ insight.review.renovation_low if insight.review else '' }}"></label><label>High estimate ($)<input name="high" type="number" min="0" step="1" required value="{{ insight.review.renovation_high if insight.review else '' }}"></label><label>Scope<select name="scope">{% for scope in ['Cosmetic','Moderate Interior','Substantial Rehab'] %}<option {% if insight.scope == scope %}selected{% endif %}>{{ scope }}</option>{% endfor %}</select></label><label>Scope explanation<textarea name="scope_note" maxlength="2000">{{ insight.scope_note }}</textarea></label><label>Review note (private)<textarea name="note" maxlength="4000">{{ insight.review.note if insight.review else '' }}</textarea></label><button class="button primary">Save estimate</button></form></details>{% endif %}{% endif %}</td></tr>{% endfor %}
         <tr class="financial-total"><th scope="row">Estimated all-in result</th><td class="{{ 'negative' if insight.financials.result_midpoint < 0 else 'positive' }}"><strong>{{ insight.financials.result_midpoint|money }}</strong><span>— {{ insight.financials.result_range }}</span></td></tr>
       </tbody></table>
     </div>
     <details class="insight-assumptions"><summary>Assumptions and limitations</summary><ul>{% for assumption in insight.assumptions %}<li>{{ assumption }}</li>{% endfor %}</ul><p>{{ insight.disclaimer }}</p></details>
   </section>
   {% endif %}
-  {% if label and label.history %}<section class="history"><strong>Label history</strong>{% for event in label.history|reverse %}<span>{{ event['from'] or 'unlabeled' }} → {{ event.to.replace('_',' ') }} · {{ event.at|dateonly }}</span>{% endfor %}</section>{% endif %}
+  {% if session.get('flip_ui_role') == 'admin' and label and label.history %}<section class="history"><strong>Label history</strong>{% for event in label.history|reverse %}<span>{{ event['from'] or 'unlabeled' }} → {{ event.to.replace('_',' ') }} · {{ event.at|dateonly }}</span>{% endfor %}</section>{% endif %}
   <section class="pair-grid">
     {% for side, listing, price, close_date, listing_id in [('Purchase side', buy, flip.buy_price, flip.buy_date, flip.buy_mls), ('Resale side', sell, flip.sell_price, flip.sell_date, flip.sell_mls)] %}
     <article class="listing-panel {% if side == 'Resale side' %}resale{% endif %}">
@@ -69,8 +65,13 @@
       <article class="photo-category-group">
         <h3>{{ group.label }}</h3>
         <div class="photo-category-sides">
-          <div><small>Purchase MLS</small>{% if group.buy %}<div class="gallery category-gallery"><div class="gallery-stage"><img class="property-photo gallery-main" src="{{ group.buy[0].photo_url }}" alt="Purchase MLS {{ group.label|lower }} photo 1 of {{ group.buy|length }}">{% if group.buy|length > 1 %}<button type="button" class="gallery-control gallery-previous" aria-label="Previous purchase {{ group.label|lower }} photo" disabled>←</button><button type="button" class="gallery-control gallery-next" aria-label="Next purchase {{ group.label|lower }} photo">→</button><span class="gallery-counter" aria-live="polite">1 / {{ group.buy|length }}</span>{% endif %}</div>{% if group.buy|length > 1 %}<div class="photo-strip" aria-label="Purchase {{ group.label|lower }} photos">{% for photo in group.buy %}<button type="button" class="photo-thumb {% if loop.first %}selected{% endif %}" data-photo="{{ photo.photo_url }}" aria-label="Show purchase {{ group.label|lower }} photo {{ loop.index }}"><img src="{{ photo.photo_url }}" alt="Purchase {{ group.label|lower }} photo {{ loop.index }}" loading="lazy"></button>{% endfor %}</div>{% endif %}</div>{% else %}<p class="no-category-photo">No sampled photo</p>{% endif %}</div>
-          <div><small>Resale MLS</small>{% if group.sell %}<div class="gallery category-gallery"><div class="gallery-stage"><img class="property-photo gallery-main" src="{{ group.sell[0].photo_url }}" alt="Resale MLS {{ group.label|lower }} photo 1 of {{ group.sell|length }}">{% if group.sell|length > 1 %}<button type="button" class="gallery-control gallery-previous" aria-label="Previous resale {{ group.label|lower }} photo" disabled>←</button><button type="button" class="gallery-control gallery-next" aria-label="Next resale {{ group.label|lower }} photo">→</button><span class="gallery-counter" aria-live="polite">1 / {{ group.sell|length }}</span>{% endif %}</div>{% if group.sell|length > 1 %}<div class="photo-strip" aria-label="Resale {{ group.label|lower }} photos">{% for photo in group.sell %}<button type="button" class="photo-thumb {% if loop.first %}selected{% endif %}" data-photo="{{ photo.photo_url }}" aria-label="Show resale {{ group.label|lower }} photo {{ loop.index }}"><img src="{{ photo.photo_url }}" alt="Resale {{ group.label|lower }} photo {{ loop.index }}" loading="lazy"></button>{% endfor %}</div>{% endif %}</div>{% else %}<p class="no-category-photo">No sampled photo</p>{% endif %}</div>
+          <div><small>Purchase MLS</small>{% if group.buy %}<div class="gallery category-gallery" data-side="buy"><div class="gallery-stage"><img class="property-photo gallery-main" src="{{ group.buy[0].photo_url }}" alt="Purchase MLS {{ group.label|lower }} photo 1 of {{ group.buy|length }}">{% if group.buy|length > 1 %}<button type="button" class="gallery-control gallery-previous" aria-label="Previous purchase {{ group.label|lower }} photo" disabled>←</button><button type="button" class="gallery-control gallery-next" aria-label="Next purchase {{ group.label|lower }} photo">→</button><span class="gallery-counter" aria-live="polite">1 / {{ group.buy|length }}</span>{% endif %}</div>{% if group.buy|length > 1 %}<div class="photo-strip" aria-label="Purchase {{ group.label|lower }} photos">{% for photo in group.buy %}<button type="button" class="photo-thumb {% if loop.first %}selected{% endif %}" data-photo="{{ photo.photo_url }}" data-category="{{ photo.category }}" data-note="{{ photo.review_note if session.get('flip_ui_role') == 'admin' else '' }}" aria-label="Show purchase {{ group.label|lower }} photo {{ loop.index }}"><img src="{{ photo.photo_url }}" alt="Purchase {{ group.label|lower }} photo {{ loop.index }}" loading="lazy"></button>{% endfor %}</div>{% endif %}</div>{% else %}<p class="no-category-photo">No sampled photo</p>{% endif %}</div>
+          <div><small>Resale MLS</small>{% if group.sell %}<div class="gallery category-gallery" data-side="sell"><div class="gallery-stage"><img class="property-photo gallery-main" src="{{ group.sell[0].photo_url }}" alt="Resale MLS {{ group.label|lower }} photo 1 of {{ group.sell|length }}">{% if group.sell|length > 1 %}<button type="button" class="gallery-control gallery-previous" aria-label="Previous resale {{ group.label|lower }} photo" disabled>←</button><button type="button" class="gallery-control gallery-next" aria-label="Next resale {{ group.label|lower }} photo">→</button><span class="gallery-counter" aria-live="polite">1 / {{ group.sell|length }}</span>{% endif %}</div>{% if group.sell|length > 1 %}<div class="photo-strip" aria-label="Resale {{ group.label|lower }} photos">{% for photo in group.sell %}<button type="button" class="photo-thumb {% if loop.first %}selected{% endif %}" data-photo="{{ photo.photo_url }}" data-category="{{ photo.category }}" data-note="{{ photo.review_note if session.get('flip_ui_role') == 'admin' else '' }}" aria-label="Show resale {{ group.label|lower }} photo {{ loop.index }}"><img src="{{ photo.photo_url }}" alt="Resale {{ group.label|lower }} photo {{ loop.index }}" loading="lazy"></button>{% endfor %}</div>{% endif %}</div>{% else %}<p class="no-category-photo">No sampled photo</p>{% endif %}</div>
+        </div>
+        <div class="room-observations">
+        {% if group.review %}<p><strong>Reviewed observation</strong> {{ group.review.text }}</p>{% else %}{% for observation in group.observations %}<p><strong>{{ observation.area }}</strong> {{ observation.detail }}</p>{% endfor %}{% endif %}
+        {% if session.get('flip_ui_role') == 'admin' %}<details class="review-editor"><summary>Review {{ group.label|lower }} observations</summary><form method="post" action="{{ url_for('save_review', pair_key=flip.pair_key, kind='room') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="room" value="{{ group.key }}"><label>Observation<textarea name="text" maxlength="6000">{% if group.review %}{{ group.review.text }}{% else %}{% for observation in group.observations %}{{ observation.detail }}
+{% endfor %}{% endif %}</textarea></label><label>Review note (private)<textarea name="note" maxlength="4000">{{ group.review.note if group.review else '' }}</textarea></label><button class="button primary">Save observation</button></form></details>{% endif %}
         </div>
       </article>
       {% endfor %}
@@ -82,6 +83,7 @@
     <div class="comparison-table-wrap"><table class="comparison-table"><thead><tr><th>Field</th><th>Purchase MLS · {{ flip.buy_mls }}</th><th>Resale MLS · {{ flip.sell_mls }}</th></tr></thead><tbody>{% for field in changed_fields %}<tr><td>{{ field.label }}</td><td>{{ field.buy_value }}</td><td>{{ field.sell_value }}</td></tr>{% else %}<tr><td colspan="3">No differing fields were available in the stored MLS records.</td></tr>{% endfor %}</tbody></table></div>
   </section>
   <details class="all-fields unchanged-fields"><summary>Fields that stayed the same <span>{{ unchanged_fields|length }} fields</span></summary><div class="field-grid">{% for field in unchanged_fields %}<div><small>{{ field.label }}</small><p>{{ field.value }}</p></div>{% endfor %}</div></details>
+{% if session.get('flip_ui_role') == 'admin' %}<dialog id="photo-review"><form method="post" action="{{ url_for('save_review',pair_key=flip.pair_key,kind='photo') }}"><h2>Review photo category</h2><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="side"><input type="hidden" name="photo_url"><img id="review-photo-preview" alt="Selected listing photo"><label>Category<select name="category">{% for key,label in room_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label><label>Review note (private)<textarea name="note" maxlength="4000"></textarea></label><button class="button primary">Save category</button><button type="button" onclick="this.closest('dialog').close()" class="button ghost">Cancel</button></form></dialog>{% endif %}
 </main>
 <script>
   document.querySelectorAll('.gallery').forEach((gallery) => {
@@ -92,6 +94,23 @@
     let thumbs = Array.from(gallery.querySelectorAll('.photo-thumb'));
     let current = 0;
 
+    const dialog = document.getElementById('photo-review');
+    if (dialog && gallery.classList.contains('category-gallery')) {
+      main.classList.add('reviewable-photo');
+      main.title = 'Click to review category and add a note';
+      main.tabIndex = 0;
+      const editPhoto = () => {
+        const selected = gallery.querySelector('.photo-thumb.selected');
+        dialog.querySelector('[name=side]').value = gallery.dataset.side;
+        dialog.querySelector('[name=photo_url]').value = selected ? selected.dataset.photo : main.getAttribute('src');
+        dialog.querySelector('[name=category]').value = selected ? selected.dataset.category : gallery.closest('article').querySelector('[name=room]').value;
+        dialog.querySelector('[name=note]').value = selected ? selected.dataset.note : '';
+        dialog.querySelector('img').src = main.src;
+        dialog.showModal();
+      };
+      main.addEventListener('click', editPhoto);
+      main.addEventListener('keydown', e => {if (e.key === 'Enter') editPhoto();});
+    }
     const showPhoto = (index) => {
       thumbs = Array.from(gallery.querySelectorAll('.photo-thumb'));
       if (!thumbs.length) return;

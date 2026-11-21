@@ -1,0 +1,10 @@
+<dialog id="property-photo-modal" class="property-photo-modal" aria-label="Property photos">
+  <div class="photo-modal-content">
+    <button type="button" class="photo-modal-close" aria-label="Close photos" autofocus>×</button>
+    <button type="button" class="photo-modal-previous" aria-label="Previous photo">‹</button>
+    <figure><img class="photo-modal-image" alt=""><p class="photo-modal-error" role="status" hidden>Photo could not load. Use the arrows to view another photo.</p><figcaption class="photo-modal-counter" aria-live="polite"></figcaption></figure>
+    <button type="button" class="photo-modal-next" aria-label="Next photo">›</button>
+  </div>
+</dialog>
+<script id="property-photo-data" type="application/json">{{ listing.photos|tojson }}</script>
+<script src="{{ url_for('static',filename='photo-modal.js') }}"></script>

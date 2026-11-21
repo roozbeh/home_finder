@@ -45,7 +45,9 @@ data_service/
 │       └── privacy_policy.html ← App Store privacy policy page (extends base.html)
 ├── mls_service/           ← scraper
 │   ├── fetch_jsessionid.py  ← Selenium login → cookies
-│   ├── search_and_store.py  ← MLS search API → MongoDB upsert
+│   ├── search_and_store.py  ← MLS search API → MongoDB upsert (active + SLD history)
+│   ├── fetch_details.py     ← per-listing details; also refetches stale SLD details
+│   ├── enrich_agent_emails.py ← backfills agent emails from bcard.jsp pages → agent_bcard_emails
 │   ├── entrypoint.sh        ← cron: login every 6h, search every 30min
 │   └── Dockerfile
 ├── db/
@@ -74,7 +76,17 @@ data_service/
 - `chat_sessions` — persisted conversation histories per user
 
 ### Key MLS listing fields
-`LISTING_ID`, `STREET_ADDRESS`, `CITY` (ALL CAPS), `MLS_STATUS` (ACTV/NEW/AC/PCH/CS/BOMK), `LIST_PRICE`, `BEDROOMS_TOTAL`, `BATHROOMS_FULL`, `BATHS_DISPLAY`, `SQFT`, `LOT_SQFT`, `YEAR_BUILT`, `DAYS_ON_MARKET`, `LATITUDE`, `LONGITUDE`
+`LISTING_ID`, `STREET_ADDRESS`, `CITY` (ALL CAPS), `MLS_STATUS` (ACTV/NEW/AC/PCH/CS/BOMK/SLD), `LIST_PRICE`, `BEDROOMS_TOTAL`, `BATHROOMS_FULL`, `BATHS_DISPLAY`, `SQFT`, `LOT_SQFT`, `YEAR_BUILT`, `DAYS_ON_MARKET`, `LATITUDE`, `LONGITUDE`
+
+### Sold/closed history (added 2026-09-26 for agent outreach)
+`search_and_store.py` runs three searches per execution (each logged separately in `mls_runs`):
+1. `search` — original active search (`ACTV,BOMK,AC,NEW,PCH,CS` × original city list), unchanged
+2. `search_sold` — `MLS_STATUS=SLD` (the sold/closed code; "SOLD" is accepted as an alias) with `CLOSE_DATE` min/max over the last 365 days, one query per outreach target city (Burlingame, San Mateo, Hillsborough, Millbrae, Belmont, San Carlos, Redwood City, Menlo Park, Palo Alto); auto-chunks monthly if a city hits the ~5000-row API cap
+3. `search_target_active` — active statuses for the same 9 target cities (additive coverage)
+
+`fetch_details.py` additionally refetches listings whose top-level status is SLD but whose `details` blob predates the sale (`details.status != SLD`) — this fills in `CLOSE_PRICE` and buyer-agent fields (`BUYER_AGENT_NAME_BCARD`, `BUYER_AGENT_DRE`, `BUYER_OFFICE_NAME_BCARD`, `SAPHONENO` = buyer-agent phone). Note: the search API truncates CITY to 10 chars in result rows (`HILLSBOROU`, `REDWOODCIY`). Buyer-agent **email** is not exposed by this MLS.
+
+The outreach pipeline that consumes this data (builds `agent_metrics`, scores agents, exports the top-100 CSV) lives in `HafezInspection/outreach/`.
 
 **Photo fields:** `LPHOTOS` and `TINYPROPPHOTO_ONELINE` are stored in mls_listings. `TINYPROPPHOTO_ONELINE` may be a raw URL or an HTML `<img>` tag — `search_listings.py` parses both. Full-size photos come from the `details` sub-document (populated by `fetch_details.py`).
 

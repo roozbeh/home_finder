@@ -23,8 +23,9 @@ import os
 import sys
 import time
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pymongo import MongoClient
+from urllib.parse import urljoin
 from mls_session import (
     MLSAuthenticationError,
     assert_authenticated_response,
@@ -39,6 +40,7 @@ DETAILS_URL_TPL  = (
 PHOTO_DETAIL_URL = "https://bridge.connectmls.com/mls/search/results/photodetail.jsp"
 MONGO_URI        = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB         = os.environ.get("MONGO_DB", "mls")
+FLIPDB_DATABASE  = os.environ.get("FLIPDB_DATABASE", "flip_finder")
 RATE_LIMIT_SLEEP = 1.0   # seconds between API calls to avoid rate-limiting
 
 
@@ -66,29 +68,29 @@ def build_session(cookies: list[dict]) -> requests.Session:
     return session
 
 
-def build_photos(details: dict) -> list[str]:
-    """
-    Derive all full-size photo URLs from PRIMARY_PHOTO_URI and photocount.
+def supplied_primary_photo(details: dict) -> list[str]:
+    """Keep the supplied primary as fallback; never invent gallery siblings."""
+    primary = details.get("PRIMARY_PHOTO_URI", "")
+    return [primary] if isinstance(primary, str) and primary.startswith("https://") else []
 
-    ConnectMLS stores the index in the filename, for example
-    ``..._41150001_1.JPEG``.  We replace that trailing number with
-    1..photocount rather than appending a new URL path segment.
-    """
-    primary    = details.get("PRIMARY_PHOTO_URI", "")
-    photocount = details.get("photocount", 0)
-    if not primary or not photocount:
-        return []
+
+def is_gallery_reference(url):
+    return isinstance(url, str) and url.startswith('https://') and bool(re.search(
+        r'/HD_[^?]+\.jpe?g|/bigphoto/[^?]+\.jpe?g|media\.mlslmedia\.com/property/|media\.crmls\.org/medias/[0-9a-f-]{36}\.jpe?g', url, re.I))
+
+
+def select_gallery(existing, recovered, detail):
+    """A partial refresh must not replace a more complete stored gallery."""
+    recovered = list(dict.fromkeys(url for url in recovered if is_gallery_reference(url)))
+    old = list(dict.fromkeys(url for url in existing if is_gallery_reference(url)))
     try:
-        count = int(photocount)
-    except (ValueError, TypeError):
-        return []
-    match = re.search(r"_(\d+)(\.[A-Za-z0-9]+)$", primary)
-    if not match:
-        return [primary]
-    return [
-        f"{primary[:match.start(1)]}{index}{primary[match.end(1):]}"
-        for index in range(1, count + 1)
-    ]
+        expected = int(detail.get('photocount') or 0)
+    except (TypeError, ValueError):
+        expected = 0
+    if recovered and (not expected or len(recovered) == expected):
+        return recovered, 'complete'
+    photos = old if len(old) > len(recovered) else recovered
+    return photos or supplied_primary_photo(detail), 'partial'
 
 
 def fetch_gallery_photos(session: requests.Session, dcid: str) -> list[str]:
@@ -105,10 +107,31 @@ def fetch_gallery_photos(session: requests.Session, dcid: str) -> list[str]:
     )
     assert_authenticated_response(response)
     response.raise_for_status()
+    # ConnectMLS may emit either absolute URLs or root-relative image paths.
+    # The original parser accepted only the former, which made galleries look
+    # empty despite the authorized page containing every HD image reference.
+    page = response.text.replace("\\/", "/")
+    # ConnectMLS uses HD_ filenames, while the RAPMLS listings shown in the
+    # same authorized photo-detail UI use UUID-based /bigphoto/... paths.
+    # Both are page-provided full-size MLS references; neither is guessed.
     candidates = re.findall(
-        r'https://[^"\'\s<>]+?/HD_[^"\'\s<>]+?\.jpe?g', response.text, re.IGNORECASE
+        r'(?:(?:https?:)?//|/)[^"\'\s<>]*?/(?:HD_[^"\'\s<>]+?|bigphoto/[^"\'\s<>]+?)\.jpe?g(?:\?[^"\'\s<>]*)?',
+        page,
+        re.IGNORECASE,
     )
-    return list(dict.fromkeys(url.replace("\\/", "/") for url in candidates))
+    candidates += re.findall(r'https://media\.crmls\.org/medias/[0-9a-f-]{36}\.jpe?g(?:\?[^"\'\s<>]*)?', page, re.IGNORECASE)
+    candidates += re.findall(r'https://media\.mlslmedia\.com/property/[^"\'\s<>\\]+', page, re.IGNORECASE)
+    normalized = [urljoin(PHOTO_DETAIL_URL, url).replace('&amp;', '&') for url in candidates]
+    # Deduplicate sizing variants by identity, retaining an actual supplied URL.
+    # Do not manufacture a query-free image reference.
+    seen = set()
+    photos = []
+    for url in normalized:
+        identity = url.split('?')[0] if 'media.crmls.org/medias/' in url else url
+        if identity not in seen:
+            seen.add(identity)
+            photos.append(url)
+    return photos
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -139,11 +162,12 @@ def log_run(db, started_at: datetime, duration_s: float,
     })
 
 
-def start_gallery_backfill_run(db, total_candidates: int):
+def start_gallery_backfill_run(db, total_candidates: int, scope: str):
     """Create an observable, resumable photo-gallery repair run record."""
     now = datetime.now(timezone.utc)
     return db.mls_runs.insert_one({
         "type": "photo_gallery_backfill",
+        "scope": scope,
         "status": "running",
         "started_at": now,
         "updated_at": now,
@@ -178,6 +202,8 @@ def update_gallery_backfill_run(db, run_id, *, processed: int, succeeded: int,
 def fetch_and_store_details(session: requests.Session,
                             refresh_active_details: bool = False,
                             refresh_photo_galleries: bool = False,
+                            flip_pairs_only: bool = False,
+                            listing_ids: list[str] | None = None,
                             closed_only: bool = False,
                             active_only: bool = False,
                             limit: int | None = None,
@@ -193,6 +219,9 @@ def fetch_and_store_details(session: requests.Session,
     refresh_conditions = [
         {"details": {"$exists": False}},
         {"MLS_STATUS": "SLD", "details.status": {"$ne": "SLD"}},
+        {"photo_gallery_repair.status": {"$in": ["pending", "partial", "failed"]},
+         "$or": [{"photo_gallery_repair.next_retry_at": {"$exists": False}},
+                 {"photo_gallery_repair.next_retry_at": {"$lte": datetime.now(timezone.utc)}}]},
     ]
     if refresh_active_details:
         # ACTV is the only currently verified active code. This is deliberately
@@ -210,6 +239,30 @@ def fetch_and_store_details(session: requests.Session,
             "details.photocount": {"$gte": 2},
             "photos": {"$not": re.compile(r"/HD_")},
         }
+        if listing_ids:
+            # Explicit, bounded repair for a reviewed set of listings.  This
+            # intentionally bypasses the stale-gallery predicate: a listing
+            # may have no legacy gallery at all and still need recovery.
+            query = {
+                "DCID": {"$exists": True, "$ne": ""},
+                "LISTING_ID": {"$in": listing_ids},
+            }
+        if flip_pairs_only:
+            # FlipDB is the product's curated universe: only purchase/resale
+            # listings that participate in an observed flip pair belong in this
+            # repair run.  This avoids spending MLS requests on the entire
+            # historical archive.
+            pair_mls_ids = set()
+            pairs = client[FLIPDB_DATABASE].flipdb
+            for field in ("buy_mls", "sell_mls"):
+                pair_mls_ids.update(
+                    value.strip() for value in pairs.distinct(field)
+                    if isinstance(value, str) and value.strip()
+                )
+            permitted = set(listing_ids or pair_mls_ids)
+            query["LISTING_ID"] = {"$in": sorted(permitted & pair_mls_ids)}
+    if listing_ids and not refresh_photo_galleries:
+        query = {"DCID": {"$exists": True, "$ne": ""}, "LISTING_ID": {"$in": listing_ids}}
     if closed_only:
         query["MLS_STATUS"] = "SLD"
     elif active_only:
@@ -218,7 +271,7 @@ def fetch_and_store_details(session: requests.Session,
         query["MLS_STATUS"] = "ACTV"
     cursor = coll.find(
         query,
-        {"_id": 1, "DCID": 1, "LISTING_ID": 1, "details": 1},
+        {"_id": 1, "DCID": 1, "LISTING_ID": 1, "details": 1, "photos": 1},
     )
     if limit is not None:
         cursor = cursor.limit(limit)
@@ -228,9 +281,16 @@ def fetch_and_store_details(session: requests.Session,
         scope += " (including all ACTV records)"
     if refresh_photo_galleries:
         scope += " (invalid photo galleries only)"
+        if flip_pairs_only:
+            scope += " (FlipDB purchase/resale listings only)"
     print(f"  {len(pending)} listings need details{scope}")
 
-    backfill_run_id = start_gallery_backfill_run(db, len(pending)) if refresh_photo_galleries else None
+    backfill_run_id = (
+        start_gallery_backfill_run(
+            db, len(pending), "flip_pairs" if flip_pairs_only else "all_eligible_listings"
+        )
+        if refresh_photo_galleries else None
+    )
     success = fail = 0
     processed = 0
     last_error = None
@@ -275,9 +335,20 @@ def fetch_and_store_details(session: requests.Session,
                     fail += 1
                     continue
                 detail = detail_list[0]
-                photos = fetch_gallery_photos(session, dcid) or build_photos(detail)
+                photos = fetch_gallery_photos(session, dcid)
+            photos, gallery_status = select_gallery(doc.get('photos') or [], photos, detail)
             now_str = datetime.now(timezone.utc).strftime("%B %d %Y %I:%M%p")
             updates = {"photos": photos, "photo_gallery_fetched": now_str}
+            try:
+                expected = int(detail.get("photocount") or 0)
+            except (TypeError, ValueError):
+                expected = 0
+            updates["photo_gallery_repair"] = {
+                "status": gallery_status,
+                "checked_at": datetime.now(timezone.utc), "count": len(photos),
+            }
+            if gallery_status == 'partial':
+                updates['photo_gallery_repair']['next_retry_at'] = datetime.now(timezone.utc) + timedelta(hours=1)
             if not refresh_photo_galleries:
                 updates.update({"details": detail, "details_fetched": now_str})
             coll.update_one({"_id": doc["_id"]}, {"$set": updates})
@@ -331,6 +402,14 @@ def main():
         help="backfill only listings with invalid/non-HD stored MLS gallery references",
     )
     parser.add_argument(
+        "--flip-pairs-only", action="store_true",
+        help="with --refresh-photo-galleries, limit repair to FlipDB purchase/resale MLS records",
+    )
+    parser.add_argument(
+        "--listing-ids", default="",
+        help="comma-separated MLS IDs; fetch details or repair galleries only for this bounded set",
+    )
+    parser.add_argument(
         "--stop-at-storage-mb", type=float, default=None,
         help="stop cleanly when MongoDB storage plus indexes reaches this MB threshold",
     )
@@ -351,6 +430,8 @@ def main():
         parser.error("--closed-only and --active-only cannot be used together")
     if args.refresh_photo_galleries and (args.closed_only or args.active_only or args.refresh_active_details):
         parser.error("--refresh-photo-galleries cannot be combined with detail-scope options")
+    if args.flip_pairs_only and not args.refresh_photo_galleries:
+        parser.error("--flip-pairs-only requires --refresh-photo-galleries")
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be at least 1")
     if args.stop_at_storage_mb is not None and args.stop_at_storage_mb <= 0:
@@ -372,11 +453,17 @@ def main():
 
     session = build_session(token["cookies"])
 
-    print("[2/2] Fetching authorized MLS gallery references..." if args.refresh_photo_galleries else "[2/2] Fetching details for new listings...")
+    if args.refresh_photo_galleries:
+        scope = " for FlipDB purchase/resale listings only" if args.flip_pairs_only else ""
+        print(f"[2/2] Fetching authorized MLS gallery references{scope}...")
+    else:
+        print("[2/2] Fetching details for new listings...")
     try:
         success, fail = fetch_and_store_details(
             session, refresh_active_details=args.refresh_active_details,
             refresh_photo_galleries=args.refresh_photo_galleries,
+            flip_pairs_only=args.flip_pairs_only,
+            listing_ids=[value.strip() for value in args.listing_ids.split(",") if value.strip()] or None,
             closed_only=args.closed_only, active_only=args.active_only, limit=args.limit,
             stop_at_storage_mb=args.stop_at_storage_mb,
         )

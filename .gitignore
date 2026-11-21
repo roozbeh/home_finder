@@ -1,3 +1,12 @@
 agentic_env
 chat_ui
 .DS_Store
+.env
+cookies.json
+*.pyc
+__pycache__/
+.wdm/
+env
+outputs/
+audit_artifacts/
+.pytest_cache/
