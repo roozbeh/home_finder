@@ -1,0 +1,20 @@
+.buyer-analysis { display: grid; gap: 2.25rem; }
+.buyer-analysis section { padding-top: 1rem; border-top: 1px solid #dce3df; }
+.buyer-analysis h2 { margin: 0 0 .6rem; }
+.analysis-amount { margin: 0; font-size: 1.55rem; font-weight: 800; }
+.analysis-choices { display: flex; flex-wrap: wrap; align-items: end; gap: .7rem; margin: 1rem 0; }
+.analysis-choices input { max-width: 12rem; }
+.cost-room { border-bottom: 1px solid #dce3df; }
+.cost-room summary { cursor: pointer; padding: .85rem .25rem; }
+.cost-room summary span { float: right; margin-left: .5rem; }
+.cost-room ul { padding-inline-start: 1.5rem; }
+.cost-room li { padding-bottom: .65rem; }
+.cost-room small { color: #526157; font-size: .875rem; }
+.scenario-summary { display: grid; gap: .55rem; }
+.scenario-summary div { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
+.scenario-summary dd { margin: 0; font-weight: 700; }
+.scenario-loss { color: #a4272f; }
+@media(max-width: 500px) {
+  .cost-room summary span { float: none; margin-left: .45rem; display: inline; }
+  .analysis-choices { align-items: stretch; flex-direction: column; }
+}

@@ -1,0 +1,32 @@
+{% extends 'buyer_base.html' %}
+{% block title %}Verified historical costs · Flip Finder{% endblock %}
+{% block buyer_body %}
+  <h1>Verified historical costs</h1>
+  <p>Private transaction pair {{ pair_key }}</p>
+  <p>Use paid invoices and settlement records for amounts. Leave any cost with missing evidence blank. Enter zero for a documented zero cost.</p>
+  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+  {% if stored %}
+    <section>
+      <h2>Current verified costs</h2>
+      <p>{{ stored.provenance }} · Evidence available {{ stored.available_date }}</p>
+      <dl>
+        {% for key, label in fields.items() %}
+        <dt>{{ label }}</dt><dd>{{ stored[key]|money if key in stored else 'Unknown' }}</dd>
+        {% endfor %}
+      </dl>
+      <p><a href="{{ url_for('analysis_review.export_outcome', pair_key=pair_key) }}">Export verified amounts</a></p>
+    </section>
+  {% endif %}
+  <form class="buyer-form" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% for key, label in fields.items() %}
+      <label>{{ label }} ($)
+        <input name="{{ key }}" type="number" min="0" max="999999999" step="1" value="{{ request.form.get(key, stored.get(key, '')) }}"{% if key == 'renovation' %} required{% endif %}>
+      </label>
+    {% endfor %}
+    <label>Date the evidence became available <input name="available_date" type="date" value="{{ request.form.get('available_date', stored.get('available_date', '')) }}" required></label>
+    <label>Private provenance <input name="provenance" maxlength="180" value="{{ request.form.get('provenance', stored.get('provenance', '')) }}" required></label>
+    <label>Invoice or settlement evidence (PDF, JPEG or PNG) <input type="file" name="evidence" accept=".pdf,.jpg,.jpeg,.png" required></label>
+    <button type="submit">Record verified costs</button>
+  </form>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends 'buyer_base.html' %}
+{% from 'buyer_components.html' import card %}
+{% block title %}Find homes · Flip Finder{% endblock %}
+{% block buyer_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+{% endblock %}
+{% block buyer_body %}
+<header class="buyer-page-head"><h1>Find Bay Area homes</h1></header>
+{% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+{% include 'buyer_search_filters.html' %}
+<script src="{{ url_for('static',filename='buyer-search-filters.js') }}" defer></script>
+<div class="result-header">
+  <h2>{{ '{:,}'.format(count) }} {{ 'home' if count == 1 else 'homes' }}</h2>
+  {% if map_url %}
+  <div id="buyer-view-switch" class="buyer-view-switch" role="group" aria-label="Results layout" hidden>
+    <button type="button" data-layout="split" aria-controls="buyer-results" aria-pressed="false">Map + list</button>
+    <button type="button" data-layout="list" aria-controls="buyer-results" aria-pressed="true">List</button>
+    <button type="button" data-layout="map" aria-controls="buyer-results" aria-pressed="false">Map</button>
+  </div>
+  {% endif %}
+</div>
+<p id="buyer-map-alert" class="buyer-note" role="status" hidden>Street map unavailable. You can still browse homes in the list.</p>
+<div id="buyer-results" class="buyer-results" data-layout="list">
+  <section class="buyer-list" aria-label="Home results">
+    <div class="buyer-cards">{% for home in homes %}{{ card(home, links[home.id]) }}{% endfor %}</div>
+    {% if not homes %}
+    <p class="buyer-note">{% if filters.market == 'rent' and not cities %}The current MLS feed has no rental listings.{% elif query or page > 1 %}No homes match this search. <a href="{{ url_for('buyer.homes') }}">Clear filters</a> to see all homes.{% else %}No homes are available right now.{% endif %}</p>
+    {% endif %}
+    {% if last_page > 1 or page > 1 %}<nav class="pagination" aria-label="Results pages">
+      {% if page > 1 %}<a href="{{ url_for('buyer.homes', page=page-1, **query) }}">Previous</a>{% endif %}
+      <span>Page {{ page }} of {{ last_page }}</span>
+      {% if page < last_page %}<a href="{{ url_for('buyer.homes', page=page+1, **query) }}">Next</a>{% endif %}
+    </nav>{% endif %}
+  </section>
+  {% if map_url %}
+  <section id="buyer-map" class="buyer-map-panel" aria-label="Map of homes" data-map-url="{{ map_url }}">
+    <div id="buyer-street-map" aria-describedby="buyer-map-message"></div>
+    <p id="buyer-map-message" role="status">Loading homes on the map…</p>
+  </section>
+  {% endif %}
+</div>
+{% if map_url %}
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"
+        integrity="sha256-Hk4dIpcqOSb0hZjgyvFOP+cEmDXUKKNE/tT542ZbNQg=" crossorigin="anonymous" defer></script>
+<script src="{{ url_for('static',filename='buyer-map.js') }}" defer></script>
+{% endif %}
+{% endblock %}

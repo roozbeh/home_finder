@@ -8,3 +8,5 @@
 .renovation-items{padding-left:17px;margin:10px 0;font-weight:400;list-style:disc}.renovation-items li{margin:6px 0;line-height:1.45;font-size:.73rem;color:#526158}.renovation-items li span{white-space:nowrap;color:#2b4834}
 
 .card-tag.profit-positive{color:#235536;background:#f0faed}.card-tag.profit-negative{color:#923b32;background:#fff0ed}.profit-basis{display:block;color:#647264;font-size:.65rem;margin-bottom:12px}.card-photo{overflow:hidden}.card-photo img{min-height:0;max-height:100%}
+
+.scenario .renovation-detail{position:relative;margin:0}.scenario .renovation-detail summary{font:inherit;font-weight:600;margin:0;cursor:pointer;color:#2b4834}.scenario .renovation-detail p{display:none;position:absolute;z-index:5;left:0;top:100%;width:min(320px,75vw);box-sizing:border-box;margin:4px 0 0;padding:12px;background:#fff;border:1px solid #cad6c6;border-radius:6px;box-shadow:0 4px 16px #0002;font-size:.72rem;line-height:1.5;white-space:normal}.scenario .renovation-detail:hover p,.scenario .renovation-detail[open] p{display:block}

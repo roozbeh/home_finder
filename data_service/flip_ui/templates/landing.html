@@ -1,45 +1,77 @@
-{% extends 'base.html' %}{% block title %}Flip Finder — Find the signal{% endblock %}{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='landing-motion.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='landing-profit.css') }}">{% endblock %}{% block body %}
-<main class="landing">
-  <section class="hero">
-    <p class="eyebrow">BAY AREA · OBSERVED MARKET SIGNALS</p>
-    <h1>A fairer way to find<br><em>real flip potential.</em></h1>
-    <p class="lede">Flip Finder is building an evidence loop from the Bay Area’s observed resale history—so investors can focus on properties worth a closer look.</p>
-    <div class="hero-actions"><a class="button primary" href="#how-it-works">See the intelligence loop</a></div>
+{% extends 'base.html' %}
+{% block title %}Flip Finder · Bay Area homes with potential{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='landing-motion.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='landing-buyer.css') }}">
+<script defer src="{{ url_for('static', filename='buyer-cache.js') }}"></script>
+{% endblock %}
+{% block body %}
+<main class="landing buyer-landing">
+  <section class="home-hero">
+    <div class="hero">
+      <h1>Find Bay Area homes <em>with potential.</em></h1>
+      <p class="lede">Browse fixer-uppers, see what work they may need, and compare renovation costs and nearby sales where available.</p>
+      <form class="home-search" method="get" action="{{ url_for('buyer.homes') }}">
+        <div>
+          <label for="landing-city">City</label>
+          <select id="landing-city" name="city">
+            <option value="">All Bay Area cities</option>
+            {% for city, count in cities %}{% if city %}<option value="{{ city }}">{{ city|title }}</option>{% endif %}{% endfor %}
+          </select>
+        </div>
+        <button class="button primary" type="submit">Browse homes</button>
+      </form>
+    </div>
     <div class="signal-orbit" aria-hidden="true">
-      <span class="orbit-ring ring-one"></span><span class="orbit-ring ring-two"></span>
-      <span class="orbit-node node-sale">SALE</span><span class="orbit-node node-pair">PAIR</span><span class="orbit-node node-signal">SIGNAL</span>
+      <span class="orbit-ring ring-one"></span>
+      <span class="orbit-ring ring-two"></span>
+      <span class="orbit-ring ring-three"></span>
+      <span class="orbit-node node-sale">LISTINGS</span>
+      <span class="orbit-node node-pair">RENOVATION</span>
+      <span class="orbit-node node-signal">COMPARABLE SALES</span>
       <span class="orbit-pulse"></span>
     </div>
-    <div class="signal-line"><span></span><b>Evidence before instinct</b><span></span></div>
   </section>
 
-  <section id="how-it-works" class="journey">
-    <div class="journey-head"><p class="eyebrow">HOW THE SYSTEM LEARNS</p><h2>From every observed sale<br>to the next decision.</h2><p>Not a promise of profit—an increasingly useful starting point built from real market evidence and human judgment.</p></div>
+  <section id="how-it-works" class="journey" aria-labelledby="journey-heading">
+    <header class="journey-head">
+      <h2 id="journey-heading">From every observed sale<br> to the next decision.</h2>
+      <p>Local sales and renovation evidence help you decide which homes deserve a closer look.</p>
+    </header>
     <div class="journey-grid">
       <article class="journey-card history-card">
-        <div class="step"><span>01</span><b>Build the market memory</b></div>
-        <div class="visual visual-history"><div class="chart-label">BAY AREA · 5 YEARS</div><div class="sale-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="scan-line"></div><div class="sale-pill"><strong>Sold</strong><span>Observed MLS record</span></div></div>
-        <h3>Collect every meaningful resale.</h3>
-        <p>We organize Bay Area sold-property history and connect purchase and resale events into comparable, short-hold pairs.</p>
-        <div class="card-foot">Sales history · property facts · before/after photos</div>
+        <div class="visual visual-history" aria-hidden="true">
+          <div class="sale-bars">{% for _ in range(12) %}<i></i>{% endfor %}</div>
+          <div class="scan-line"></div>
+          <div class="sale-pill"><strong>Closed sale</strong><span>Comparable evidence</span></div>
+        </div>
+        <h3>See what sold nearby.</h3>
+        <p>Compare similar homes by size, location, sale date and finish when comparable sales are available.</p>
       </article>
-
       <article class="journey-card learning-card">
-        <div class="step"><span>02</span><b>Teach the signal</b></div>
-        <div class="visual visual-learning"><div class="pair-mini"><div><small>PURCHASE</small><b>$720k</b></div><div class="mini-arrow">→</div><div><small>RESALE</small><b>$930k</b></div></div><div class="labels-mini"><span class="yes">GOOD FLIP</span><span>REVIEWED</span></div><div class="dot-grid"></div><div class="learning-spark"></div></div>
-        <h3>Pair data with investor judgment.</h3>
-        <p>Photos, listing changes, prices, timing, and your labels create a transparent training set for distinguishing stronger and weaker flip patterns.</p>
-        <div class="card-foot">AI-assisted research · human-labelled outcomes</div>
+        <div class="visual visual-learning" aria-hidden="true">
+          <div class="pair-mini">
+            <div><small>SCOPE</small><b>Refresh</b></div>
+            <span class="scope-divider"></span>
+            <div><small>SCOPE</small><b>Remodel</b></div>
+          </div>
+          <div class="labels-mini"><span class="yes">LINE ITEMS</span><span>PRICE SOURCES</span></div>
+          <div class="dot-grid"></div><div class="learning-spark"></div>
+        </div>
+        <h3>Compare renovation scopes.</h3>
+        <p>When a budget is available, see what it includes, where prices came from and which items still need a quote.</p>
       </article>
-
       <article class="journey-card opportunity-card">
-        <div class="step"><span>03</span><b>Surface the next opportunity</b></div>
-        <div class="visual visual-opportunity"><div class="listing-mini"><span class="live-dot"></span><small>NEW TO MARKET</small><h4>Oakland · 3 bd</h4><p>Listed $685,000</p><p class="resale-estimate">Estimated resale $860–880k</p></div><div class="offer-card"><small>EST. GROSS SPREAD</small><strong>$190–230k</strong><span>Before renovation, carrying &amp; selling costs</span></div><div class="opportunity-radar"></div></div>
-        <h3>Watch new listings with context.</h3>
-        <p>As inventory appears, the goal is to flag research candidates, show the comparable evidence, and propose a disciplined offer range for review.</p>
-        <div class="card-foot">Candidate alerts · comparable context · not investment advice</div>
+        <div class="visual visual-opportunity" aria-hidden="true">
+          <div class="listing-mini"><span class="live-dot"></span><small>ACTIVE LISTING</small><h4>Property details</h4><p>Price · condition · location</p></div>
+          <div class="offer-card"><small>PURCHASE SCENARIO</small><strong>Cost breakdown</strong></div>
+          <div class="opportunity-radar"></div>
+        </div>
+        <h3>Decide what to see in person.</h3>
+        <p>Start with the asking price and listing facts, then consider repairs and other purchase costs where estimates are available.</p>
       </article>
     </div>
   </section>
 </main>
-<footer>Private research workspace · Observed market signals, not investment advice or a valuation</footer>{% endblock %}
+<footer class="home-footer">Flip Finder · Bay Area homes with potential</footer>
+{% endblock %}

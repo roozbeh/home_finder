@@ -1,0 +1,25 @@
+{% macro money(value) %}${{ '{:,.0f}'.format(value) }}{% endmacro %}
+{% macro facts(home) %}
+<p class="home-facts">{% if home.beds is defined %}<span>{{ home.beds }} {{ 'bed' if home.beds == 1 else 'beds' }}</span>{% endif %}{% if home.baths is defined %}<span>{{ '{:g}'.format(home.baths) }} {{ 'bath' if home.baths == 1 else 'baths' }}</span>{% endif %}{% if home.sqft is defined %}<span>{{ '{:,}'.format(home.sqft) }} sq ft</span>{% endif %}{% if home.property_type %}<span>{{ home.property_type }}</span>{% endif %}</p>
+{% endmacro %}
+{% macro photo(home, media_id, lazy=false) %}
+{% if media_id %}
+<img src="{{ url_for('buyer.media', home_id=home.id, media_id=media_id) }}" alt="{{ 'Fictional property photo' if home.preview else 'Property photo' }}"{% if lazy %} loading="lazy"{% endif %}>
+{% else %}<div class="photo-placeholder">Photo unavailable</div>{% endif %}
+{% endmacro %}
+{% macro card(home, link) %}
+<article class="buyer-card">
+  <a class="card-photo" href="{{ link }}" aria-label="View home in {{ home.location }}">
+    {{ photo(home, home.photos[0] if home.photos else none, true) }}
+  </a>
+  <div class="card-content">
+    <strong>{{ money(home.price) }}{% if home.market == 'rent' %}<small> / mo</small>{% endif %}</strong><h3>{{ home.location }}</h3>
+    {{ facts(home) }}
+    {% set budget = home.scopes.budgets[0] if home.scopes and home.scopes.budgets else none %}
+    {% if budget and budget.low is not none %}
+    <p class="availability">{{ 'Partial scope' if home.scopes.partial else 'Renovation' }} · {{ money(budget.low) }}–{{ money(budget.high) }}</p>
+    {% else %}<p class="availability">Renovation estimate unavailable</p>{% endif %}
+    <a class="text-action" href="{{ link }}">View home</a>
+  </div>
+</article>
+{% endmacro %}

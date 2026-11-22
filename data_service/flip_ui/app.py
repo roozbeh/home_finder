@@ -17,6 +17,7 @@ from urllib.parse import urlencode, urljoin
 
 from flask import Flask, abort, redirect, render_template, request, session, url_for
 from pymongo import MongoClient
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 MONGO_URI = os.environ.get("MONGO_URI", "")
@@ -54,10 +55,13 @@ DEMO_PUBLIC_FIELDS = {
 }
 
 app = Flask(__name__)
+if os.environ.get("BUYER_TRUST_PROXY") == "true":
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 app.secret_key = os.environ.get("FLIP_UI_SECRET_KEY", "") or os.environ.get("SECRET_KEY", "")
 if not app.secret_key:
-    # Development-only fallback. Production deployments must set FLIP_UI_SECRET_KEY.
-    app.secret_key = "replace-this-development-session-key"
+    if os.environ.get("BUYER_MODE") == "approved":
+        raise RuntimeError("Set FLIP_UI_SECRET_KEY for approved buyer mode")
+    app.secret_key = secrets.token_hex(32)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
@@ -69,7 +73,7 @@ mongo = MongoClient(MONGO_URI, connect=False) if MONGO_URI else None
 
 def _dbs():
     if mongo is None:
-        raise RuntimeError("MONGO_URI is not configured")
+        abort(503, "The MLS review workspace is unavailable in this build.")
     return mongo[SOURCE_DATABASE], mongo[RESULT_DATABASE]
 
 
@@ -87,7 +91,7 @@ def validate_csrf() -> None:
 
 @app.context_processor
 def inject_template_values():
-    return {"csrf_token": csrf_token}
+    return {"csrf_token": csrf_token, "mls_workspace_available": mongo is not None}
 
 
 @app.after_request
@@ -102,7 +106,7 @@ def protect_admin_responses(response):
 def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("flip_ui_admin"):
+        if session.get("flip_ui_role") != "admin" or not session.get("flip_ui_admin"):
             return redirect(url_for("login", next=request.full_path))
         return view(*args, **kwargs)
     return wrapped
@@ -424,15 +428,12 @@ def dateonly_filter(value):
     return str(value or "—")
 
 
-@app.route("/")
-def landing():
-    return render_template("landing.html")
-
-
 @app.route("/admin/login", methods=["GET", "POST"])
 def login():
     error = None
-    next_url = request.values.get("next") or url_for("flip_list")
+    next_url = request.values.get("next")
+    if next_url and (not next_url.startswith("/") or next_url.startswith("//") or "\\" in next_url):
+        next_url = None
     if request.method == "POST":
         validate_csrf()
         submitted_user = request.form.get("username", "")
@@ -442,7 +443,7 @@ def login():
                 and secrets.compare_digest(submitted_password, DEMO_PASSWORD)):
             session.clear()
             session["flip_ui_role"] = "demo"
-            return redirect(next_url if next_url.startswith("/") and not next_url.startswith("//") else url_for("flip_list"))
+            return redirect(next_url or url_for("flip_list" if mongo is not None else "buyer.homes"))
         elif not ADMIN_PASSWORD:
             error = "Admin password is not configured on this server."
         elif (secrets.compare_digest(submitted_user, ADMIN_USERNAME)
@@ -450,17 +451,17 @@ def login():
             session.clear()
             session["flip_ui_admin"] = True
             session["flip_ui_role"] = "admin"
-            return redirect(next_url if next_url.startswith("/") and not next_url.startswith("//") else url_for("flip_list"))
+            return redirect(next_url or url_for("flip_list" if mongo is not None else "buyer.leads"))
         else:
             error = "Incorrect username or password."
-    return render_template("login.html", error=error, next_url=next_url)
+    return render_template("login.html", error=error, next_url=next_url or "")
 
 
 @app.post("/admin/logout")
 def logout():
     validate_csrf()
     session.clear()
-    return redirect(url_for("landing"))
+    return redirect(url_for("buyer.landing"))
 
 
 @app.route("/admin")
@@ -665,6 +666,17 @@ def save_label(pair_key: str):
         )
     return redirect(url_for("flip_detail", pair_key=pair_key))
 
+
+from public_buyer import register_public
+register_public(app, admin_required, validate_csrf)
+
+from buyer_analysis_review import register_analysis_review
+from buyer_supply import register_supply
+from buyer_worker import register_worker
+
+register_analysis_review(app, admin_required, validate_csrf)
+register_supply(app, admin_required, validate_csrf)
+register_worker(app, admin_required, validate_csrf)
 
 from active import register_active
 register_active(app, _dbs, signed_in_required, listing_view, demo_viewer)

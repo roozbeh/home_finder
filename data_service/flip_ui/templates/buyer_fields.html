@@ -1,0 +1,25 @@
+{% macro input(key, label, data, errors, type='text', required=true, maximum=200) %}
+<label for="{{ key }}">{{ label }}</label>
+<input id="{{ key }}" type="{{ type }}" name="{{ key }}" value="{{ data[key] }}" {% if required %}required{% endif %} maxlength="{{ maximum }}" {% if errors[key] %}aria-invalid="true" aria-describedby="{{ key }}-error"{% endif %}>
+{{ error(key, errors) }}
+{% endmacro %}
+{% macro error(key, errors) %}
+{% if errors[key] %}<p class="form-error" id="{{ key }}-error">{{ errors[key] }}</p>{% endif %}
+{% endmacro %}
+{% macro area(key, label, data, errors, required=false) %}
+<label for="{{ key }}">{{ label }}</label>
+<textarea id="{{ key }}" name="{{ key }}" maxlength="3000" {% if required %}required{% endif %} {% if errors[key] %}aria-invalid="true" aria-describedby="{{ key }}-error"{% endif %}>{{ data[key] }}</textarea>
+{{ error(key, errors) }}
+{% endmacro %}
+{% macro reply(data, errors) %}
+<label for="channel">Preferred reply method</label>
+<select id="channel" name="channel" required>{{ options(data.channel, [('email','Email'),('phone','Phone')]) }}</select>
+{{ error('channel', errors) }}
+{{ input('contact', 'Email address or phone number for your chosen reply method', data, errors) }}
+{% endmacro %}
+{% macro options(selected, values) %}
+{% for value, label in values %}<option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+{% endmacro %}
+{% macro hidden(csrf, submission_id, entry) %}
+<input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="submission_id" value="{{ submission_id }}"><input type="hidden" name="entry" value="{{ entry }}">
+{% endmacro %}

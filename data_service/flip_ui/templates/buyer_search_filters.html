@@ -1,0 +1,83 @@
+{% macro amount(key, value, label, max=999999999, step=1) %}
+<label>{{ label }}
+  <input type="number" name="{{ key }}" min="0" max="{{ max }}" step="{{ step }}"
+         value="{{ value if value is not none else '' }}" placeholder="Any">
+</label>
+{% endmacro %}
+{% macro apply(name) %}<button type="submit" aria-label="Apply {{ name }}">Apply filters</button>{% endmacro %}
+<form action="{{ url_for('buyer.homes') }}" class="buyer-search-controls">
+  <label class="search-city">City
+    <select name="city">
+      <option value="">All Bay Area cities</option>
+      {% if filters.city and filters.city not in (cities|map(attribute=0)|list) %}<option selected value="{{ filters.city }}">{{ filters.city|title }}</option>{% endif %}
+      {% for city, city_count in cities %}{% if city %}<option value="{{ city }}" {% if filters.city == city %}selected{% endif %}>{{ city|title }} ({{ city_count }})</option>{% endif %}{% endfor %}
+    </select>
+  </label>
+  <div class="search-filter-groups">
+    <details class="search-filter">
+      <summary>{{ markets[filters.market] }}</summary>
+      <div class="search-filter-panel">
+        <fieldset><legend>Listing status</legend>
+          {% for value, label in markets.items() %}<label class="filter-choice"><input type="radio" name="market" value="{{ value }}" {% if filters.market == value %}checked{% endif %}>{{ label }}</label>{% endfor %}
+        </fieldset>
+        {{ apply('listing status') }}
+      </div>
+    </details>
+    <details class="search-filter">
+      <summary{% if filters.min_price is not none or filters.max_price is not none %} class="selected-filter"{% endif %}>Price</summary>
+      <div class="search-filter-panel">
+        <div class="filter-field-pair">{{ amount('min_price', filters.min_price, 'Minimum price') }}{{ amount('max_price', filters.max_price, 'Maximum price') }}</div>
+        {{ apply('price range') }}
+      </div>
+    </details>
+    <details class="search-filter">
+      <summary{% if filters.beds or filters.baths %} class="selected-filter"{% endif %}>Beds &amp; baths</summary>
+      <div class="search-filter-panel">
+        <div class="filter-field-pair">{{ amount('beds', filters.beds, 'Minimum beds', 99) }}{{ amount('baths', filters.baths, 'Minimum baths', 99, 0.5) }}</div>
+        {{ apply('beds and baths') }}
+      </div>
+    </details>
+    <details class="search-filter search-type-filter" data-count-url="{{ url_for('buyer.property_type_count') }}">
+      <summary{% if filters.property_type %} class="selected-filter"{% endif %}>Property type{% if filters.property_type %} · {{ filters.property_type|length }}{% endif %}</summary>
+      <div class="search-filter-panel">
+        <fieldset>
+          <legend>Choose one or more property types</legend>
+          <div class="search-type-grid">
+            <button type="submit" name="all_property_types" value="1" class="search-type-any"
+                    aria-pressed="{{ 'false' if filters.property_type else 'true' }}">Any</button>
+            {% for value, label in property_groups.items() %}
+            <label class="search-type-tile">
+              <input type="checkbox" name="property_type" value="{{ value }}"{% if value in filters.property_type %} checked{% endif %}>
+              <span>{{ label }}</span>
+            </label>
+            {% endfor %}
+            {% for value in filters.property_type if value not in property_groups %}
+            <label class="search-type-tile">
+              <input type="checkbox" name="property_type" value="{{ value }}" checked>
+              <span>Previously selected type</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+        <button type="submit" class="search-type-apply">See {{ '{:,}'.format(count) }} {{ 'result' if count == 1 else 'results' }}</button>
+      </div>
+    </details>
+    <details class="search-filter">
+      <summary{% if filters.min_sqft or filters.min_lot or filters.min_year or filters.photos_only or filters.dom or filters.reduced or filters.auction or filters.bank_owned %} class="selected-filter"{% endif %}>More filters</summary>
+      <div class="search-filter-panel">
+        <div class="filter-field-pair">{{ amount('min_sqft', filters.min_sqft, 'Minimum living area (sq ft)') }}{{ amount('min_lot', filters.min_lot, 'Minimum lot size (sq ft)') }}</div>
+        {{ amount('min_year', filters.min_year, 'Earliest year built', 2100) }}
+        {% if capabilities and capabilities[0] %}<label>Days on market<select name="dom"><option value="">Any</option>{% for dom in [45, 60] %}<option value="{{ dom }}" {% if filters.dom == dom %}selected{% endif %}>{{ dom }}+ days</option>{% endfor %}</select></label>{% endif %}
+        <fieldset><legend>Show only</legend>
+          <label class="filter-choice"><input type="checkbox" name="photos_only" value="1" {% if filters.photos_only %}checked{% endif %}>Homes with photos</label>
+          {% if capabilities %}{% for key, label, supported in [('reduced','Price reduced',capabilities[1]),('auction','Auction',capabilities[2]),('bank_owned','Bank-owned',capabilities[3])] %}
+          {% if supported %}<label class="filter-choice"><input type="checkbox" name="{{ key }}" value="1" {% if filters[key] %}checked{% endif %}>{{ label }}</label>{% endif %}
+          {% endfor %}{% endif %}
+        </fieldset>
+        {{ apply('more filters') }}
+      </div>
+    </details>
+  </div>
+  <button type="submit">Search</button>
+  <a class="text-action" href="{{ url_for('buyer.homes') }}">Clear filters</a>
+</form>

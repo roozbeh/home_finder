@@ -1,0 +1,32 @@
+{% extends 'buyer_base.html' %}
+{% from 'buyer_components.html' import money %}
+{% from 'buyer_fields.html' import input, area, reply, options, hidden, error as field_error %}
+{% block title %}{{ 'Request a tour' if kind == 'request-tour' else 'Connect with an agent' }} · Flip Finder{% endblock %}
+{% block buyer_body %}
+<a class="text-action" href="{{ url_for('buyer.detail',home_id=home.id) }}">Back to home</a>
+<div class="form-shell">
+<h1>{{ 'Request a tour' if kind == 'request-tour' else 'Connect with an agent' }}</h1>
+<p class="form-property"><strong>{{ home.location }}</strong> · {{ money(home.price) }}</p>
+<p>Your request goes to <strong>{{ buyer_identity.name }}</strong>, your buyer contact at {{ buyer_identity.brokerage }}.</p>
+{% if kind == 'request-tour' %}<p>Tell us when you can visit. {{ buyer_identity.name }} will follow up after verifying access.</p>{% endif %}
+{% if error or errors %}<p class="form-error" role="alert">{{ error or 'Review the highlighted fields.' }}</p>{% endif %}
+<form method="post" class="buyer-form">
+  {{ hidden(csrf_token(), submission_id, entry) }}
+  {{ input('name', 'Name', data, errors) }}
+  {{ reply(data, errors) }}
+  {% if kind == 'request-tour' %}
+    {{ input('preferred_time', 'Preferred start time (Pacific time)', data, errors, 'datetime-local') }}
+    {{ input('alternative_time', 'Alternative start time (Pacific time, optional)', data, errors, 'datetime-local', false) }}
+    <label for="window_minutes">Duration of each availability window</label>
+    <select id="window_minutes" name="window_minutes" required>{{ options(data.window_minutes or '60', [('60','1 hour'),('30','30 minutes'),('120','2 hours')]) }}</select>
+    {{ field_error('window_minutes', errors) }}
+    <label for="representation">Are you working with a buyer’s agent?</label>
+    <select id="representation" name="representation" required>{{ options(data.representation or 'unsure', [('unsure','Unsure'),('yes','Yes'),('no','No')]) }}</select>
+    {{ field_error('representation', errors) }}
+  {% endif %}
+  {{ area('question', 'Question or note (optional)', data, errors) }}
+  <p class="form-notice">{{ notice }}</p>
+  <button>{{ 'Request tour' if kind == 'request-tour' else 'Send request' }}</button>
+</form>
+</div>
+{% endblock %}

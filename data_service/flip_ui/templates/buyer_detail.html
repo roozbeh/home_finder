@@ -1,0 +1,101 @@
+{% extends 'buyer_base.html' %}
+{% from 'buyer_components.html' import photo, money, facts %}
+{% block title %}{{ home.location }} · Flip Finder{% endblock %}
+{% block buyer_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='buyer-analysis.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='buyer-property.css') }}">
+{% endblock %}
+{% block buyer_body %}
+{% set connect = url_for('buyer.inquiry', home_id=home.id, kind='contact') %}
+{% set tour = url_for('buyer.inquiry', home_id=home.id, kind='request-tour') %}
+{% set market = home.market or 'sale' %}
+<div class="property-page">
+  <div class="property-toolbar">
+    <a class="text-action" href="{{ back_url }}">Back to homes</a>
+    <span class="property-status">{{ {'sale':'For sale', 'rent':'For rent', 'sold':'Sold'}[market] }}</span>
+  </div>
+  {% if home.photos %}
+  <div class="property-mosaic{% if home.photos|length < 3 %} compact{% endif %}">
+    <div class="property-cover">{{ photo(home, home.photos[0]) }}</div>
+    {% if home.photos|length >= 3 %}<div class="property-side-photos">
+      {% for asset in home.photos[1:3] %}{{ photo(home, asset, true) }}{% endfor %}
+    </div>{% endif %}
+  </div>
+  {% else %}
+  <div class="property-mosaic compact"><div class="property-cover">{{ photo(home, none) }}</div></div>
+  {% endif %}
+  <div class="property-intro{% if buyer_identity and market != 'sold' %} has-contact{% endif %}">
+    <section class="listing-summary">
+      <p class="eyebrow">{{ {'sale':'Asking price', 'rent':'Monthly rent', 'sold':'Sold price'}[market] }}</p>
+      <h1>{{ money(home.price) }}</h1>
+      <h2>{{ home.location }}</h2>
+      {% if home.locality %}<p class="property-locality">{{ home.locality }}</p>{% endif %}
+      {% if home.sale_date %}<p>Closed {{ home.sale_date }}</p>{% endif %}
+      {{ facts(home) }}
+      {% if home.year_built or home.lot_sqft %}
+      <ul class="property-quick-facts">
+        {% if home.year_built %}<li>Built in {{ home.year_built }}</li>{% endif %}
+        {% if home.lot_sqft %}<li>{{ '{:,}'.format(home.lot_sqft) }} sq ft lot</li>{% endif %}
+        {% if home.facts and home.facts.get('Community and HOA', {}).get('HOA fee') %}
+          <li>HOA fee {{ home.facts['Community and HOA']['HOA fee'] }}{% if home.facts['Community and HOA']['HOA billing period'] %} · {{ home.facts['Community and HOA']['HOA billing period'] }}{% endif %}</li>
+        {% endif %}
+      </ul>
+      {% endif %}
+    </section>
+    {% if buyer_identity and market != 'sold' %}<aside class="contact-card">
+      <p class="eyebrow">Buyer’s contact</p>
+      <h2>Ask {{ buyer_identity.name }} about this home</h2>
+      <p>{{ buyer_identity.brokerage }} · {{ buyer_identity.license }}</p>
+      <p>{{ buyer_identity.disclosure }}</p>
+      <div class="desktop-actions"><a class="buyer-button" href="{{ connect }}">Connect with an agent</a>
+        <a class="buyer-button secondary" href="{{ tour }}">Request a tour</a></div>
+    </aside>{% endif %}
+  </div>
+  {% if home.photos|length > 1 %}
+  <details class="property-section property-gallery" open>
+    <summary>View all {{ home.photos|length }} photos{% if home.photo_groups %} by category{% endif %}</summary>
+    {% if home.photo_groups %}
+      <nav class="gallery-categories" aria-label="Photo categories">
+        {% for label, assets in home.photo_groups.items() %}<a href="#photos-{{ loop.index }}">{{ label }} <span>{{ assets|length }}</span></a>{% endfor %}
+      </nav>
+      {% for label, assets in home.photo_groups.items() %}
+      <section class="photo-category" id="photos-{{ loop.index }}">
+        <h3>{{ label }}</h3>
+        <div class="gallery">{% for asset in assets %}{{ photo(home, asset, true) }}{% endfor %}</div>
+      </section>
+      {% endfor %}
+      {% set grouped = home.photo_groups.values() | sum(start=[]) %}
+      {% set other = home.photos | reject('in', grouped) | list %}
+      {% if other %}<section class="photo-category"><h3>More photos</h3><div class="gallery">{% for asset in other %}{{ photo(home, asset, true) }}{% endfor %}</div></section>{% endif %}
+    {% else %}
+      <div class="gallery">{% for asset in home.photos %}{{ photo(home, asset, true) }}{% endfor %}</div>
+    {% endif %}
+  </details>
+  {% endif %}
+  {% if home.remarks %}
+  <section class="property-section property-overview">
+    <h2>About this home</h2>
+    <p>{{ home.remarks }}</p>
+  </section>
+  {% endif %}
+  {% if home.facts %}
+  <section class="property-section property-facts-panel">
+    <h2>Facts &amp; features</h2>
+    <div class="property-facts-grid">
+      {% for group, entries in home.facts.items() if entries %}<section class="property-fact-group">
+        <h3>{{ group }}</h3>
+        <dl>{% for label, value in entries.items() %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+      </section>{% endfor %}
+    </div>
+  </section>
+  {% endif %}
+  {% if home.credit or home.updated %}
+  <div class="attribution">
+    {% if home.credit and home.credit.source %}<span>MLS source <strong>{{ home.credit.source }}</strong></span>{% endif %}
+    {% if home.updated %}<span>Updated {{ home.updated[:10] }}</span>{% endif %}
+  </div>
+  {% endif %}
+  {% if market == 'sale' %}{% include 'buyer_analysis_panels.html' %}{% endif %}
+</div>
+{% if buyer_identity and market != 'sold' %}<div class="mobile-actions"><a href="{{ connect }}">Connect with an agent</a><a class="secondary" href="{{ tour }}">Request a tour</a></div>{% endif %}
+{% endblock %}

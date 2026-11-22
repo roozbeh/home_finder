@@ -1,0 +1,64 @@
+# Start separately from the existing private Flip Finder stack. See flip_ui/BUYER_ROLLOUT.md.
+services:
+  buyer-public:
+    container_name: flips_public
+    build:
+      context: ./flip_ui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8091:5000"
+    env_file:
+      - ${BUYER_PRODUCTION_ENV_FILE:?Set the restricted buyer-only environment file}
+    environment:
+      BUYER_MODE: approved
+      BUYER_TRUST_PROXY: "true"
+      BUYER_CATALOG: /catalog/catalog.sqlite
+      BUYER_SUBMISSIONS: /private/submissions.sqlite
+      FLIP_UI_COOKIE_SECURE: "true"
+      MONGO_URI: ""
+    volumes:
+      - type: bind
+        source: ${BUYER_PUBLISHED_DIR:?Set the absolute publication artifact directory}
+        target: /catalog
+        read_only: true
+      - type: bind
+        source: ${BUYER_PRIVATE_DIR:?Set the absolute submission storage directory}
+        target: /private
+    security_opt:
+      - no-new-privileges:true
+
+  buyer-manifest-publisher:
+    build:
+      context: ./flip_ui
+    profiles: ["operator"]
+    environment:
+      MONGO_URI: ""
+    volumes:
+      - type: bind
+        source: ${BUYER_PUBLISHED_DIR:?Set the absolute publication artifact directory}
+        target: /catalog
+      - type: bind
+        source: ${BUYER_PUBLISH_INPUT_DIR:?Set the absolute private publisher input directory}
+        target: /input
+        read_only: true
+    entrypoint: ["python", "-B", "buyer_publish.py"]
+    command: ["/input/manifest.json", "/catalog/catalog.sqlite", "--assets", "/input/media"]
+
+
+  buyer-live-publisher:
+    build:
+      context: ./flip_ui
+    profiles: ["live-feed"]
+    restart: unless-stopped
+    env_file:
+      - ${BUYER_MLS_PUBLISHER_ENV_FILE:-env}
+    volumes:
+      - type: bind
+        source: ${BUYER_PUBLISHED_DIR:?Set the absolute publication artifact directory}
+        target: /catalog
+      - type: bind
+        source: ${BUYER_PUBLISH_INPUT_DIR:?Set the absolute private publisher input directory}
+        target: /input
+        read_only: true
+    entrypoint: ["python", "-u", "-B", "buyer_live_feed.py"]
+    command: ["--policy", "/input/live-policy.json", "--catalog", "/catalog/catalog.sqlite", "--assets", "/input/media", "--interval", "${BUYER_PUBLISH_INTERVAL:-900}"]

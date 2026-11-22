@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='buyer.css') }}">
+<script defer src="{{ url_for('static', filename='buyer-cache.js') }}"></script>
+{% block buyer_head %}{% endblock %}
+{% endblock %}
+{% block body %}
+<main class="buyer">
+  {% if buyer_mode == 'preview' %}<div class="preview-notice">Buyer preview · Fictional homes, sample identities and test submissions</div>{% endif %}
+  {% block buyer_body %}{% endblock %}
+</main>
+<footer class="buyer-footer">Flip Finder · Bay Area fixer-upper search{% if buyer_mode == 'preview' %} · Synthetic inventory{% endif %}</footer>
+{% endblock %}

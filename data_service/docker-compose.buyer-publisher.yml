@@ -1,0 +1,32 @@
+# Build an operator-only buyer catalog in the Home Finder checkout.
+services:
+  buyer-publisher:
+    build:
+      context: ./flip_ui
+      dockerfile: Dockerfile.publisher
+    restart: unless-stopped
+    user: "${BUYER_PUBLISHER_UID:-1000}:${BUYER_PUBLISHER_GID:-1000}"
+    env_file:
+      - ${BUYER_MLS_PUBLISHER_ENV_FILE:?Set the private MLS publisher environment file}
+    volumes:
+      - type: bind
+        source: ${BUYER_PUBLISH_INPUT_DIR:?Set the private publication input directory}
+        target: /input
+        read_only: true
+      - type: bind
+        source: ${BUYER_PUBLISHED_DIR:?Set the private catalog output directory}
+        target: /catalog
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      # Match mls_app on Docker 18.09, whose default profile blocks PyMongo threads.
+      - seccomp=unconfined
+      - no-new-privileges:true
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: ["--policy", "/input/live-policy.json", "--catalog", "/catalog/catalog.sqlite", "--assets", "/input/media", "--interval", "${BUYER_PUBLISH_INTERVAL:-900}"]

@@ -1,0 +1,82 @@
+.buyer-landing {
+  padding: clamp(44px, 6vw, 92px) clamp(20px, 7vw, 120px) clamp(45px, 6vw, 90px);
+  background: radial-gradient(ellipse at 85% 10%, #294d3f, transparent 37%), #102920;
+}
+.home-hero, .buyer-landing .journey {
+  max-width: 1320px;
+  margin-inline: auto;
+}
+.home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(14px, 4vw, 64px);
+}
+.home-hero h1 {
+  font-size: clamp(3rem, 6.2vw, 6.3rem);
+  max-width: 13ch;
+}
+.home-hero h1 em { display: block; }
+.home-hero .lede {
+  max-width: 46ch;
+  margin: 22px 0 26px;
+  font-size: clamp(1rem, 1.45vw, 1.22rem);
+}
+.home-search { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
+.home-search label { display: block; margin-bottom: 7px; color: #e1ede4; font-size: .875rem; font-weight: 800; }
+.home-search select, .home-search .button { min-height: 48px; font: 800 .95rem Manrope, Arial, sans-serif; }
+.home-search select {
+  max-width: 100%;
+  padding: 9px 33px 9px 14px;
+  border: 1px solid #739787;
+  border-radius: 8px;
+  background: #18372c;
+  color: #f6f8ee;
+  color-scheme: dark;
+}
+.home-search .button { padding-inline: 23px; }
+.home-search .button:hover { background: #d8fa92; }
+.home-search :focus-visible { outline: 2px solid var(--lime); outline-offset: 4px; }
+.home-hero .signal-orbit {
+  aspect-ratio: 1.2;
+  height: auto;
+  margin: 0;
+  border: 1px solid rgba(200, 241, 105, .14);
+  border-radius: 50%;
+  background: radial-gradient(circle, #274e3b 0, #17352b 48%, transparent 72%);
+  transform: none;
+}
+.home-hero .orbit-ring {
+  top: 50%;
+  right: auto;
+  left: 50%;
+  translate: -50% -50%;
+  height: auto;
+  aspect-ratio: 1;
+}
+.home-hero .ring-one { width: 78%; }
+.home-hero .ring-two { width: 59%; }
+.home-hero .ring-three { width: 34%; border-color: rgba(200, 241, 105, .17); }
+.home-hero .orbit-pulse { top: 50%; right: auto; left: 50%; translate: -50% -50%; }
+.home-hero .orbit-node { font-size: clamp(.56rem, 1vw, .72rem); padding: 8px 11px; }
+.home-hero .node-sale { top: 22%; right: 52%; }
+.home-hero .node-pair { top: 39%; right: 8%; }
+.home-hero .node-signal { top: 68%; right: 32%; }
+.buyer-landing .journey { margin-top: clamp(36px, 6vw, 88px); }
+.buyer-landing .journey-grid { margin-top: 28px; }
+.buyer-landing .journey-card { min-height: 0; border-radius: 12px; padding: clamp(14px, 1.8vw, 24px); }
+.buyer-landing .visual { margin: 0 0 21px; border-radius: 7px; }
+.buyer-landing .journey-card > p { font-size: 1rem; margin-bottom: 6px; }
+.buyer-landing .pair-mini { grid-template-columns: 1fr 1px 1fr; gap: 12px; }
+.scope-divider { height: 75%; background: #d6d0bd; }
+.home-footer { border-top: 1px solid #315246; }
+@media (max-width: 800px) {
+  .home-hero { grid-template-columns: minmax(0, 1fr) minmax(0, .65fr); gap: 15px; }
+  .buyer-landing .journey-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 570px) {
+  .home-hero { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  .home-hero h1 { font-size: clamp(2.85rem, 12vw, 3.7rem); }
+  .home-hero .signal-orbit { width: min(275px, 86%); justify-self: center; }
+  .home-hero .node-signal { right: 25%; }
+}

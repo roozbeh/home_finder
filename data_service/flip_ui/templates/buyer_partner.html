@@ -1,0 +1,22 @@
+{% extends 'buyer_base.html' %}
+{% from 'buyer_fields.html' import input, area, reply, hidden %}
+{% block title %}For agents · Flip Finder{% endblock %}
+{% block buyer_body %}
+<div class="form-shell">
+<h1>Partner with Flip Finder</h1>
+<p>We’re looking for Bay Area agents who help buyers evaluate fixer-uppers, compare renovation scopes and arrange tours. Roozbeh reviews applications and verifies brokerage affiliation.</p>
+{% if error or errors %}<p class="form-error" role="alert">{{ error or 'Review the highlighted fields.' }}</p>{% endif %}
+<form method="post" class="buyer-form">
+  {{ hidden(csrf_token(), submission_id, entry) }}
+  {{ input('name','Name',data,errors) }}
+  {{ input('license','California DRE license number',data,errors,maximum=8) }}
+  {{ input('brokerage','Responsible brokerage',data,errors) }}
+  {{ input('markets','Markets served',data,errors) }}
+  {{ area('experience','Fixer-upper experience',data,errors,true) }}
+  {{ input('availability','Availability',data,errors) }}
+  {{ reply(data, errors) }}
+  <p class="form-notice">{{ notice }}</p>
+  <button>Submit application</button>
+</form>
+</div>
+{% endblock %}

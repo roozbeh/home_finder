@@ -1,0 +1,58 @@
+{% extends 'buyer_base.html' %}
+{% block title %}Supply opportunity — Flip Finder{% endblock %}
+{% block buyer_body %}
+<a href="{{ url_for('buyer_supply.index') }}">Back to supply intake</a>
+<h1>{{ 'Supply opportunity' if item else 'Add an opportunity' }}</h1>
+<p>{{ label }} · Private brokerage intake</p>
+{% if message %}<p role="alert">{{ message }}</p>{% endif %}
+{% if item and item.withdrawn_at %}<p>Withdrawn {{ item.withdrawn_at }}</p>{% else %}
+{% macro error(key) %}{% if key in errors %}<span id="error-{{ key }}" class="field-error">{{ errors[key] }}</span>{% endif %}{% endmacro %}
+{% macro field(key, title, kind='text', limit=200) %}
+<label>{{ title }}
+<input name="{{ key }}" type="{{ kind }}" maxlength="{{ limit }}" value="{{ values.get(key, '') }}"{% if key in errors %} aria-invalid="true" aria-describedby="error-{{ key }}"{% endif %}>
+{{ error(key) }}
+</label>
+{% endmacro %}
+<form class="buyer-form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {{ field('city', 'Permitted city or market label', limit=80) }}
+  {{ field('price', 'Asking price in whole dollars', 'number') }}
+  <label>Property type <select name="property_type">{% for kind in types %}<option{% if kind == values.get('property_type') %} selected{% endif %}>{{ kind }}</option>{% endfor %}</select>{{ error('property_type') }}</label>
+  {{ field('advertising_basis', 'Written authority to advertise and authorizing party', limit=500) }}
+  {{ field('media_basis', 'Written photo rights and clearance for city-only display', limit=500) }}
+  {{ field('sanitized_file', 'Approved JPEG asset file name (optional)', limit=100) }}
+  {{ field('access_contact', 'Party authorized to arrange access (private)') }}
+  <label>Access instructions (private)<textarea name="access_instructions" maxlength="1500">{{ values.get('access_instructions', '') }}</textarea>{{ error('access_instructions') }}</label>
+  <label>Assignment terms (private)<textarea name="assignment_terms" maxlength="1000">{{ values.get('assignment_terms', '') }}</textarea>{{ error('assignment_terms') }}</label>
+  <fieldset><legend>Source-confirmed showing windows, Pacific time (private)</legend>
+  {% for index in ['1', '2'] %}
+  {{ field('start_' ~ index, 'Window ' ~ index ~ ' starts', 'datetime-local') }}
+  {{ field('end_' ~ index, 'Window ' ~ index ~ ' ends', 'datetime-local') }}
+  {% endfor %}
+  </fieldset>
+  <label><span><input type="checkbox" name="verified" value="yes"{% if values.get('verified') == 'yes' %} checked{% endif %}> Verify current authority, price, access and windows for publication</span>{{ error('verified') }}</label>
+  <p>Save as a draft by leaving verification clear. A verified opportunity expires after 12 hours or when its last window ends, whichever comes first.</p>
+  <button name="action" value="save">Save opportunity</button>
+</form>
+{% if item %}
+<form method="post" class="buyer-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button name="action" value="withdraw">Withdraw opportunity</button>
+</form>
+{% endif %}
+{% endif %}
+{% if item %}
+<section aria-label="Private access updates">
+  <h2>Private access updates</h2>
+  {% for at, action, record in history %}
+  <details{% if loop.first %} open{% endif %} class="inbox-record">
+    <summary>{{ action|title }} · {{ at }} · {{ record.assigned }}</summary>
+    <p>Authorized access contact {{ record.access_contact or 'Pending' }}</p>
+    {% for start, end in record.windows %}<p>{{ start }} to {{ end }} (UTC)</p>{% endfor %}
+    {% if record.access_instructions %}<p>{{ record.access_instructions }}</p>{% endif %}
+    {% if record.assignment_terms %}<p>{{ record.assignment_terms }}</p>{% endif %}
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

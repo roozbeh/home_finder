@@ -1,0 +1,50 @@
+# Candidate configuration. Confirm certificate paths and the operator network on the host.
+# Stage alongside the current vhost without enabling both definitions of this hostname.
+<VirtualHost *:80>
+    ServerName flips.roozbeh.realtor
+
+    # Retain the host's working ACME challenge mapping when using a webroot renewal.
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI} !^/\.well-known/acme-challenge/
+    RewriteRule ^ https://flips.roozbeh.realtor%{REQUEST_URI} [R=308,L,NE]
+
+    ErrorLog ${APACHE_LOG_DIR}/flips.roozbeh.realtor-error.log
+    CustomLog ${APACHE_LOG_DIR}/flips.roozbeh.realtor-access.log "%v %t \"%m %U %H\" %>s %b"
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName flips.roozbeh.realtor
+    SSLEngine On
+    SSLCertificateFile /etc/letsencrypt/live/flips.roozbeh.realtor/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/flips.roozbeh.realtor/privkey.pem
+
+    ProxyPreserveHost On
+    ProxyRequests Off
+    RequestHeader unset X-Forwarded-For
+    RequestHeader set X-Forwarded-Proto "https"
+
+    # Public buyer app. Forward paths explicitly so its operator pages stay on private ingress.
+    ProxyPassMatch "^/$" "http://127.0.0.1:8091/"
+    ProxyPassMatch "^(/(?:homes|static)(?:/.*)?)$" "http://127.0.0.1:8091$1"
+    ProxyPassMatch "^(/agents/partner/?)$" "http://127.0.0.1:8091$1"
+    ProxyPassReverse / http://127.0.0.1:8091/
+
+    # Preserve the existing private review app. Finalize its network access with the operator.
+    ProxyPassMatch "^(/admin(?:/.*)?)$" "http://127.0.0.1:8090$1"
+    ProxyPassReverse /admin http://127.0.0.1:8090/admin
+    <Location "/admin">
+        # Replace local-only access with the approved VPN or operator CIDR before activation.
+        Require local
+    </Location>
+    <LocationMatch "^/admin/(?:leads|partners|submissions|supply|analysis|renovation)(?:/|$)">
+        Require all denied
+    </LocationMatch>
+
+    # Protect fallback paths when no upstream rule handles the request.
+    <LocationMatch "^/(?!$|homes(?:/|$)|static(?:/|$)|agents/partner/?$|admin(?:/|$))">
+        Require all denied
+    </LocationMatch>
+
+    ErrorLog ${APACHE_LOG_DIR}/flips.roozbeh.realtor-error.log
+    CustomLog ${APACHE_LOG_DIR}/flips.roozbeh.realtor-access.log "%v %t \"%m %U %H\" %>s %b"
+</VirtualHost>

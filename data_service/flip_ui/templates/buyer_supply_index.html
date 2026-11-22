@@ -1,0 +1,14 @@
+{% extends 'buyer_base.html' %}
+{% block title %}Supply partner intake — Flip Finder{% endblock %}
+{% block buyer_body %}
+<h1>Supply partner intake</h1>
+<p>{{ label }}{% if preview %} · Fictional preview partner{% endif %} · Assigned to {{ assigned }}</p>
+{% if not publish_ready %}<p>Draft intake is available. Publication needs the base manifest, media directory, and catalog configuration.</p>{% endif %}
+<a class="buyer-button" href="{{ url_for('buyer_supply.detail') }}">Add opportunity</a>
+{% for row in rows %}
+<article class="inbox-record">
+  <h2><a href="{{ url_for('buyer_supply.detail', home_id=row.id) }}">{{ row.city }} · {{ row.price|money }}</a></h2>
+  {% if row.withdrawn_at %}<p>Withdrawn {{ row.withdrawn_at }}</p>{% elif row.verified_at %}<p>Last verified {{ row.verified_at }}</p>{% else %}<p>Draft awaiting verification</p>{% endif %}
+</article>
+{% else %}<p>No opportunities yet.</p>{% endfor %}
+{% endblock %}

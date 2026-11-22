@@ -1,0 +1,40 @@
+{% extends 'buyer_base.html' %}
+{% block title %}Analysis coverage · Flip Finder{% endblock %}
+{% block buyer_body %}
+<h1>Analysis coverage</h1>
+{% if report %}
+<p>{{ report.publication_eligible }} eligible for publication · {{ report.ai_eligible }} eligible for photo processing in the current inventory snapshot</p>
+<div class="inbox-record">
+  <h2>Processing and cost</h2>
+  <p>Fixture worker {{ 'paused' if report.control.paused else 'ready' }} · actual paid spend $0.00</p>
+  <p>Simulated spend ${{ '%.4f'|format(report.control.spent / 1000000) }} against a ${{ '%.4f'|format(report.control.ceiling / 1000000) }} ceiling</p>
+  <p>Projected remaining queued work at the fixture maximum per attempt ${{ '%.4f'|format(report.remaining_micros / 1000000) }}</p>
+  <p>Mean simulated cost per complete fixture listing {% if report.measured_micros_per_home is not none %}${{ '%.4f'|format(report.measured_micros_per_home / 1000000) }}{% else %}awaiting a complete run{% endif %}</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" name="action" value="{{ 'resume' if report.control.paused else 'pause' }}">{{ 'Resume' if report.control.paused else 'Pause' }} fixture processing</button>
+  </form>
+  <h3>November 21 planning figures</h3>
+  <p>10,061 listings and 390,040 photo references. Standard inference projection $448 initial and $174 per month.</p>
+  <p>Business reserve $3,000–$6,000 upfront and $425–$1,400 per month, plus MLS fees, development and acquisition.</p>
+</div>
+<h2>Listing coverage</h2>
+<dl>{% for state, count in report.states.items() %}<dt>{{ state|capitalize }}</dt><dd>{{ count }}</dd>{% endfor %}</dl>
+{% for listing in report.listings %}
+<details class="inbox-record">
+  <summary>{{ listing.county }} · {{ listing.id }} · {{ listing.state|capitalize }}</summary>
+  <p>{{ listing.completed }}/{{ listing.eligible }} unique eligible photos completed · {{ listing.unavailable }} unavailable · {{ listing.retryable }} retryable · {{ listing.failed }} failed · {{ listing.processing }} processing · {{ listing.queued }} queued</p>
+  <p>{{ listing.tokens }} fixture tokens · {{ listing.retries }} retries · {{ listing.image_failures }} failed attempts · {{ listing.cache_hits }} cache hits · ${{ '%.4f'|format(listing.simulated / 1000000) }} simulated</p>
+</details>
+{% else %}<p>The worker inventory is empty.</p>{% endfor %}
+{% if pages > 1 %}
+<nav aria-label="Analysis inventory pages">
+  {% if page > 1 %}<a href="{{ url_for('buyer_analysis_dashboard', page=page - 1) }}">Previous page</a>{% endif %}
+  <span>Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a href="{{ url_for('buyer_analysis_dashboard', page=page + 1) }}">Next page</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<p>Set <code>BUYER_WORKER_DB</code> to the private worker database to review coverage.</p>
+{% endif %}
+{% endblock %}

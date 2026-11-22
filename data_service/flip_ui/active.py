@@ -1,35 +1,19 @@
 """Active listing exploration and transparent, user-entered flip scenarios."""
 import math
-import re
 from collections import defaultdict
 from flask import Blueprint, render_template, request, abort
 
-BAY_COUNTIES = ['Alameda', 'Contra Costa', 'Marin', 'Napa', 'San Francisco', 'San Mateo', 'Santa Clara', 'Solano', 'Sonoma']
+from mls_geography import BAY_COUNTIES
+
 CANDIDATES = {'SF426123960':1417626,'ML82065431':1450312,'41149750':1476152,'BA326084425':794430,'CRIV26238559':1085427,'CRSN26222098':1096760,'41149039':1278476,'ML82066483':1234969,'41152317':1133491,'BA326091746':524948}
 
 def renovation_bullets(assessment):
-    """Extract itemized ranges already present in saved AI room observations."""
-    bullets = []
-    pattern = r'\$\s*([\d,]+(?:\.\d+)?)([kK]?)\s*[–—-]\s*\$?\s*([\d,]+(?:\.\d+)?)([kK]?)(\+?)'
-    def compact(value, unit):
-        amount = float(value.replace(',', '')) * (1000 if unit else 1)
-        return f'${amount / 1000:g}k' if amount >= 1000 else f'${amount:g}'
-    for observation in assessment.get('observations', []):
-        area = observation.get('area', 'Other work')
-        detail = observation.get('detail', '')
-        ranges = list(re.finditer(pattern, detail))
-        def amount(match):
-            low, low_unit, high, high_unit, plus = match.groups()
-            return compact(low, low_unit) + '–' + compact(high, high_unit) + plus
-        if 'roof' in area.lower() and 'exterior' in area.lower() and len(ranges) > 1:
-            bullets.extend([{'area':'Exterior', 'cost':amount(ranges[0])},
-                            {'area':'Roof (if replacement needed)', 'cost':amount(ranges[-1])}])
-        else:
-            label = area
-            if 'roof' in area.lower() and 'if needed' in detail.lower():
-                label += ' (if needed)'
-            bullets.append({'area':label, 'cost':amount(ranges[0]) if ranges else 'Not separately priced'})
-    return bullets
+    """Keep saved observations expandable until they have structured costs."""
+    return [{
+        'area': observation.get('area') or 'Other work',
+        'detail': observation.get('detail') or '',
+    } for observation in assessment.get('observations', []) if isinstance(observation, dict)]
+
 
 def purchase_recommendation(assessment, asking):
     # Use assessed values only: the unadjusted candidate screen is not an ARV.

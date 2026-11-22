@@ -1,0 +1,125 @@
+{% macro amount(value) -%}
+  {%- if value < 0 %}−{% endif -%}${{ '{:,.2f}'.format(value|abs).rstrip('0').rstrip('.') }}
+{%- endmacro %}
+{% macro facts(row) -%}
+  {{ row.sale_date }} · {{ '{:,}'.format(row.sqft) }} sq ft · {{ row.distance }} mi
+{%- endmacro %}
+<div class="buyer-analysis">
+  <section id="renovation">
+    <h2>Renovation scope</h2>
+    {% if analysis and analysis.budget.low is not none %}
+      <p class="analysis-amount">{{ amount(analysis.budget.low) }}–{{ amount(analysis.budget.high) }}</p>
+      <p>{{ 'Partial budget for the selected work' if home.scopes.partial else 'Budget for the selected work' }} · Scope {{ home.scopes.version }}</p>
+    {% else %}
+      <p>Renovation estimate pending review.</p>
+    {% endif %}
+    {% if analysis and analysis.errors %}<p role="alert">{{ analysis.errors|join(' ') }}</p>{% endif %}
+    {% if analysis and (home.scopes.options or analysis.scenario) %}
+      <form class="analysis-choices" method="get" action="#renovation">
+        {% for key in ['city','market','min_price','max_price','beds','baths','property_type','min_sqft','min_lot','min_year','dom','reduced','auction','bank_owned','photos_only','page'] %}
+          {% for value in request.args.getlist(key) %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+        {% endfor %}
+        {% for group, choices in home.scopes.options.items() %}
+        <label>{{ group|replace('_', ' ')|capitalize }} scope
+          <select name="scope_{{ loop.index0 }}">
+            {% for key, label in choices.items() %}
+            <option value="{{ key }}"{% if analysis.selection[group] == key %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endfor %}
+        {% if analysis.scenario %}
+          <label>Selected profit target ($)<input name="profit_target" type="number" min="0" max="10000000" step="1" value="{{ analysis.scenario.target }}"></label>
+        {% endif %}
+        <button type="submit">Update estimate</button>
+      </form>
+    {% endif %}
+    {% if analysis %}
+      {% for room in analysis.budget.rooms %}
+      <details class="cost-room">
+        <summary><strong>{{ room.room }}</strong><span>{{ amount(room.low) }}–{{ amount(room.high) }} selected work</span></summary>
+        <ul>
+          {% for line in room['items'] %}
+          <li><strong>{{ line.task }}</strong> · {{ amount(line.low) }}–{{ amount(line.high) }}<br>
+            {{ line.quantity }} × {{ amount(line.unit_low) }}–{{ amount(line.unit_high) }} per {{ line.unit }}<br>
+            <small>{{ line.source_kind }} · {{ line.source }} · {{ line.source_date }} · {{ line.geography }} · {{ line.confidence|capitalize }} confidence{% if line.evidence_count %} · {{ line.evidence_count }} evidence {{ 'photo' if line.evidence_count == 1 else 'photos' }}{% endif %}</small>
+          </li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endfor %}
+      {% if home.scopes.notes %}
+      <details class="cost-room">
+        <summary><strong>Observations and separate allowances</strong></summary>
+        <ul>
+        {% for note in home.scopes.notes %}
+          <li>{{ note.room }} · {{ note.kind }}<br>{{ note.task }}{% if note.low is defined %} · {{ amount(note.low) }}–{{ amount(note.high) }}<br><small>{{ note.source_kind }} · {{ note.source }} · {{ note.source_date }} · {{ note.geography }} · {{ note.confidence|capitalize }} confidence</small>{% endif %}</li>
+        {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+      {% if not private_analysis and buyer_identity %}<p><a href="{{ url_for('buyer.inquiry', home_id=home.id, kind='contact', entry='estimate') }}">Ask about this estimate</a></p>{% endif %}
+    {% endif %}
+  </section>
+  {% if not private_analysis %}
+  <section>
+    <h2>Comparable sales</h2>
+    {% if home.sales %}
+      <p>These nearby closed sales with updated finishes support the modeled resale price.</p>
+      <details class="cost-room">
+        <summary><strong>{{ home.sales|length }} selected comparable sales</strong></summary>
+        <ul>
+          {% for sale in home.sales %}<li><strong>{{ amount(sale.price) }}</strong><br>{{ facts(sale) }}<br><small>{{ sale.reason }}</small></li>{% endfor %}
+        </ul>
+      </details>
+    {% else %}
+      <p>A resale estimate needs enough eligible sales of similar homes with a documented updated finish.</p>
+    {% endif %}
+  </section>
+  <section>
+    <h2>Similar past projects</h2>
+    {% if home.projects %}
+      <p>Paired purchase and resale records give context about past transactions.</p>
+      <details class="cost-room">
+        <summary><strong>{{ home.projects|length }} matched {{ 'transaction pair' if home.projects|length == 1 else 'transaction pairs' }}</strong></summary>
+        <ul>
+          {% for project in home.projects %}
+          <li><strong>{{ amount(project.gross_spread) }} observed gross spread</strong><br>
+              Purchased for {{ amount(project.purchase_price) }} · Sold for {{ amount(project.price) }}<br>
+              {{ facts(project) }} · {{ project.hold_days }}-day hold<br>
+              {{ project.flip_status }} · {{ project.reason }}<br>
+              {% if project.net_result is not none %}Documented net result {{ amount(project.net_result) }} · {% endif %}{{ project.net_basis }}
+          </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% else %}
+      <p>No similar projects with eligible purchase and resale evidence are available here.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+  {% if analysis.scenario %}
+  {% set scenario = analysis.scenario %}
+  <section>
+    <h2>Purchase scenario</h2>
+    <dl class="scenario-summary">
+      <div><dt>Modeled resale</dt><dd>{{ amount(scenario.resale) }}</dd></div>
+      <div><dt>Renovation midpoint</dt><dd>{{ amount(scenario.renovation) }}</dd></div>
+      <div><dt>Estimated {{ 'loss' if scenario.result < 0 else 'gain' }} at asking</dt><dd class="{{ 'scenario-loss' if scenario.result < 0 else '' }}">{{ amount(scenario.result) }}</dd></div>
+      <div><dt>Break-even purchase price</dt><dd>{{ amount(scenario.break_even) if scenario.break_even > 0 else 'Unavailable' }}</dd></div>
+      <div><dt>Purchase price for {{ amount(scenario.target) }} target profit</dt><dd>{{ amount(scenario.target_offer) if scenario.target_offer > 0 else 'Unavailable' }}</dd></div>
+    </dl>
+    {% if scenario.incomplete %}<p>Unpriced costs in the ledger could change the result.</p>{% endif %}
+    <details class="cost-room">
+      <summary><strong>View the cost ledger</strong><span>{{ amount(scenario.total_cost) }} total modeled costs</span></summary>
+      <ul>
+        {% for item in scenario.ledger %}
+        <li><strong>{{ item.label }}</strong>{% if item.amount is not none %} · {{ amount(item.amount) }}{% endif %}<br>
+            <small>{{ item.category }} · {{ item.basis }}</small>
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+  </section>
+  {% endif %}
+</div>
