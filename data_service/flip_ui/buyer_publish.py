@@ -14,6 +14,7 @@ from buyer_catalog import utcnow
 from buyer_listing_facts import checked_facts, public_text
 from buyer_media import approved_mls_photo_url, validated_jpeg
 from buyer_photo_labels import CATEGORIES
+from buyer_property_types import property_type_group, property_type_label
 
 FIELDS = ('city', 'price', 'property_type', 'beds', 'baths', 'sqft', 'status', 'address',
           'geolocation', 'media', 'public_remarks', 'credits', 'updated', 'days_on_market',
@@ -96,6 +97,19 @@ def project(manifest, row, asset_dir):
     for key, types in field_types.items():
         if key in allow and type(row.get(key)) in types:
             home[key] = row[key]
+    if 'property_type' in home:
+        value = home.pop('property_type')
+        label = property_type_label(value)
+        if label:
+            home['property_type'] = label
+            if group := property_type_group(label):
+                home['property_type_group'] = group
+    property_facts = home.get('facts', {}).get('Property and parking', {})
+    if 'Property subtype' in property_facts:
+        if 'property_type' in home:
+            property_facts['Property subtype'] = home['property_type']
+        else:
+            property_facts.pop('Property subtype')
     if type(home.get('price')) is not int or home['price'] <= 0:
         return None, []
     address_ok = 'address' in allow and bool(row.get('address'))

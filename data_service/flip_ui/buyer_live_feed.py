@@ -17,6 +17,7 @@ from mls_geography import BAY_COUNTIES
 from buyer_listing_facts import FACT_KEYS, public_facts, public_text
 from buyer_media import approved_mls_photo_url
 from buyer_photo_labels import CATEGORIES, apply_bulk_categories
+from buyer_property_types import listing_property_type
 from buyer_publish import FIELDS, publish
 
 ACTIVE = ('ACTV', 'NEW', 'BOMK', 'PCH')
@@ -31,7 +32,8 @@ PROJECTION = {key: 1 for key in (
     *MAPPED.values(), *FACT_KEYS, 'CLOSE_DATE', 'CLOSE_PRICE', 'photos',
     'SALE_OR_RENT', 'details.SALE_OR_RENT', 'details.CLOSE_DATE', 'details.CLOSE_PRICE',
     'details.INTERNET_DISPLAY', 'details.INTERNET_SITES', 'details.PRIMARY_PHOTO_URI',
-    'details.PUBLIC_REMARKS', 'details.Baths', *(f'details.{key}' for key in FACT_KEYS),
+    'details.PUBLIC_REMARKS', 'details.Baths', 'PROPERTY_SUB_TYPE', 'details.PROPERTY_SUB_TYPE',
+    'details.PROPERTY_TYPE', *(f'details.{key}' for key in FACT_KEYS),
 )}
 
 
@@ -55,14 +57,6 @@ def transaction_market(doc, details):
     if raw_status in ACTIVE and kind in {'for sale', 'sale', ''}:
         return 'sale'
     return None
-
-
-def building_type(doc, details):
-    value = public_text(details.get('BUILDING_TYPE') or doc.get('BUILDING_TYPE')
-                        or details.get('PROPERTY_SUBTYPE'))
-    if not value:
-        return 'Residential'
-    return {'DE': 'Detached', 'CO': 'Condo', 'TH': 'Townhouse'}.get(value, value)
 
 
 def read_stamp(value):
@@ -149,7 +143,7 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
         for key, field in MAPPED.items():
             if field in doc:
                 row[key] = doc[field]
-        row['property_type'] = building_type(doc, details)
+        row['property_type'] = listing_property_type(doc, details)
         for name in ('beds', 'sqft', 'lot_sqft', 'year_built'):
             row[name] = integer_amount(row.get(name, details.get(MAPPED[name])))
         bath_display = details.get('Baths') or details.get('BATHS_DISPLAY') or ''
