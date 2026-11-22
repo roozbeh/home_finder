@@ -222,6 +222,21 @@ def register_public(app, admin_required, validate_csrf):
             for home_id, price, label, point in catalog.matching_locations(mode, filters)
         ])
 
+    @bp.get('/homes/<home_id>/map-preview')
+    def map_preview(home_id):
+        try:
+            filters = search_parameters(request.args)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        home = catalog.map_home(mode, filters, home_id)
+        if home is None:
+            abort(404)
+        photo = url_for('buyer.media', home_id=home_id, media_id=home['photos'][0]) if home['photos'] else None
+        return jsonify(label=home['location'], price=home['price'],
+                       market=home.get('market', 'sale'), photo=photo, fictional=home.get('preview', False),
+                       url=listing_url(home_id, filter_query(filters, include_page=True)),
+                       facts={key: home[key] for key in ('beds', 'baths', 'sqft', 'property_type') if key in home})
+
     @bp.get('/homes/<home_id>')
     def detail(home_id):
         home = home_or_404(home_id)

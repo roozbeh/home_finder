@@ -51,6 +51,18 @@
         <a class="buyer-button secondary" href="{{ tour }}">Request a tour</a></div>
     </aside>{% endif %}
   </div>
+  {% if home.credit or home.updated or home.listing_updated or home.details_checked %}
+  <section class="property-section property-listing-record" aria-labelledby="listing-record-title">
+    <h2 id="listing-record-title">MLS listing record</h2>
+    <dl>
+      {% if home.credit and home.credit.source %}<div><dt>MLS source</dt><dd>{{ home.credit.source }}</dd></div>{% endif %}
+      {% if home.credit and home.credit.mls_id %}<div><dt>MLS number</dt><dd>{{ home.credit.mls_id }}</dd></div>{% endif %}
+      {% if home.listing_updated %}<div><dt>Listing updated by MLS</dt><dd><time datetime="{{ home.listing_updated }}">{{ home.listing_updated }}</time></dd></div>{% endif %}
+      {% if home.details_checked %}<div><dt>MLS details checked</dt><dd><time datetime="{{ home.details_checked }}">{{ home.details_checked[:10] }} at {{ home.details_checked[11:16] }} UTC</time></dd></div>{% endif %}
+      {% if home.updated and not home.details_checked %}<div><dt>Inventory last checked</dt><dd><time datetime="{{ home.updated }}">{{ home.updated[:10] }}</time></dd></div>{% endif %}
+    </dl>
+  </section>
+  {% endif %}
   {% if home.photos|length > 1 %}
   <details class="property-section property-gallery" open>
     <summary>View all {{ home.photos|length }} photos{% if home.photo_groups %} by category{% endif %}</summary>
@@ -88,12 +100,6 @@
       </section>{% endfor %}
     </div>
   </section>
-  {% endif %}
-  {% if home.credit or home.updated %}
-  <div class="attribution">
-    {% if home.credit and home.credit.source %}<span>MLS source <strong>{{ home.credit.source }}</strong></span>{% endif %}
-    {% if home.updated %}<span>Updated {{ home.updated[:10] }}</span>{% endif %}
-  </div>
   {% endif %}
   {% if market == 'sale' %}{% include 'buyer_analysis_panels.html' %}{% endif %}
 </div>

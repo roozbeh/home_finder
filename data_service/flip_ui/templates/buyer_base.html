@@ -5,7 +5,7 @@
 {% block buyer_head %}{% endblock %}
 {% endblock %}
 {% block body %}
-<main class="buyer">
+<main class="buyer{% block buyer_class %}{% endblock %}">
   {% if buyer_mode == 'preview' %}<div class="preview-notice">Buyer preview · Fictional homes, sample identities and test submissions</div>{% endif %}
   {% block buyer_body %}{% endblock %}
 </main>

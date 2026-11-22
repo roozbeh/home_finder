@@ -24,6 +24,7 @@ import sys
 import time
 import requests
 from datetime import datetime, timezone, timedelta
+from html import unescape
 from pymongo import MongoClient
 from urllib.parse import urljoin
 from mls_session import (
@@ -42,6 +43,9 @@ MONGO_URI        = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB         = os.environ.get("MONGO_DB", "mls")
 FLIPDB_DATABASE  = os.environ.get("FLIPDB_DATABASE", "flip_finder")
 RATE_LIMIT_SLEEP = 1.0   # seconds between API calls to avoid rate-limiting
+MLS_LISTINGS_GALLERY_URL = re.compile(
+    r'(https://media\.mlslmedia\.com/property/MLSL/[0-9]{8}/[0-9a-fA-F]{32})/([0-9]{1,4})/([0-9]{1,3})'
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -110,7 +114,7 @@ def fetch_gallery_photos(session: requests.Session, dcid: str) -> list[str]:
     # ConnectMLS may emit either absolute URLs or root-relative image paths.
     # The original parser accepted only the former, which made galleries look
     # empty despite the authorized page containing every HD image reference.
-    page = response.text.replace("\\/", "/")
+    page = unescape(response.text).replace("\\/", "/")
     # ConnectMLS uses HD_ filenames, while the RAPMLS listings shown in the
     # same authorized photo-detail UI use UUID-based /bigphoto/... paths.
     # Both are page-provided full-size MLS references; neither is guessed.
@@ -121,17 +125,22 @@ def fetch_gallery_photos(session: requests.Session, dcid: str) -> list[str]:
     )
     candidates += re.findall(r'https://media\.crmls\.org/medias/[0-9a-f-]{36}\.jpe?g(?:\?[^"\'\s<>]*)?', page, re.IGNORECASE)
     candidates += re.findall(r'https://media\.mlslmedia\.com/property/[^"\'\s<>\\]+', page, re.IGNORECASE)
-    normalized = [urljoin(PHOTO_DETAIL_URL, url).replace('&amp;', '&') for url in candidates]
+    normalized = [urljoin(PHOTO_DETAIL_URL, url) for url in candidates]
     # Deduplicate sizing variants by identity, retaining an actual supplied URL.
     # Do not manufacture a query-free image reference.
-    seen = set()
-    photos = []
+    photos = {}
     for url in normalized:
-        identity = url.split('?')[0] if 'media.crmls.org/medias/' in url else url
-        if identity not in seen:
-            seen.add(identity)
-            photos.append(url)
-    return photos
+        if mlsl_photo := MLS_LISTINGS_GALLERY_URL.fullmatch(url):
+            prefix, size, photo_number = mlsl_photo.groups()
+            identity = f'{prefix}/{photo_number}'
+            preferred_size = size == '2'
+        else:
+            identity = url.split('?')[0] if 'media.crmls.org/medias/' in url else url
+            preferred_size = False
+        previous = photos.get(identity)
+        if previous is None or (preferred_size and not previous[1]):
+            photos[identity] = url, preferred_size
+    return [url for url, _ in photos.values()]
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────

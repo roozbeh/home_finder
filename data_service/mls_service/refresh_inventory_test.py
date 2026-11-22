@@ -10,9 +10,24 @@ from pymongo import MongoClient
 
 import refresh_inventory as refresh
 import search_and_store as search
+from fetch_details import fetch_gallery_photos, select_gallery
 
 
 class SearchTest(unittest.TestCase):
+    def test_mls_listings_gallery_counts_full_size_photos_once(self):
+        base = 'https://media.mlslmedia.com/property/MLSL/12345678/0123456789abcdef0123456789abcdef'
+        session = Mock()
+        response = session.get.return_value
+        response.status_code = 200
+        response.url = 'https://bridge.connectmls.com/mls/search/results/photodetail.jsp'
+        response.is_redirect = False
+        response.headers = {'Content-Type': 'text/html'}
+        response.text = (f'<button data-photo="&#34;{base}/1/1&#34;">View</button>'
+                         f'<img src="{base}/2/1"><img src="{base}/2/2">')
+        photos = fetch_gallery_photos(session, 'example')
+        self.assertEqual(photos, [f'{base}/2/1', f'{base}/2/2'])
+        self.assertEqual(select_gallery([], photos, {'photocount': 2}), (photos, 'complete'))
+
     def test_capped_or_malformed_city_does_not_count_as_complete(self):
         observed, complete = {}, set()
         with patch.object(search, "ROW_CAP_THRESHOLD", 2), patch.object(search, "fetch_listings", side_effect=[

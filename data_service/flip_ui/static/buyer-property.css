@@ -30,6 +30,9 @@
 .property-fact-group dl { grid-template-columns:minmax(105px,1fr) minmax(0,1.4fr); }
 .property-fact-group dt { color:var(--buyer-muted); padding-right:10px; }
 .property-fact-group dd { overflow-wrap:anywhere; }
+.property-listing-record dl { display:flex; flex-wrap:wrap; gap:14px 32px; margin:0; }
+.property-listing-record dt { color:var(--buyer-muted); font-size:.875rem; }
+.property-listing-record dd { font-weight:700; }
 @media (max-width:800px) {
   .property-intro.has-contact { display:block; }
 }

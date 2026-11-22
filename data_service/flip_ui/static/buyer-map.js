@@ -25,24 +25,130 @@
     if (mapHadFocus) results.querySelector('.buyer-list a')?.focus();
   }
 
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  }
+
+  function previewLink(url) {
+    const link = element('a', 'buyer-map-preview-link', 'View home');
+    link.href = url;
+    return link;
+  }
+
+  function previewCard(home) {
+    const card = element('article', 'buyer-map-preview');
+    const photo = element('div', 'buyer-map-preview-photo');
+    const unavailable = element('span', '', 'Photo unavailable');
+    if (home.photo) {
+      const image = document.createElement('img');
+      image.alt = home.fictional ? 'Fictional property photo' : 'Property photo';
+      image.decoding = 'async';
+      image.addEventListener('error', () => photo.replaceChildren(unavailable), { once: true });
+      image.src = home.photo;
+      photo.append(image);
+    } else {
+      photo.append(unavailable);
+    }
+
+    const copy = element('div', 'buyer-map-preview-copy');
+    const price = fullPrice.format(home.price) + (home.market === 'rent' ? ' / mo' : '');
+    copy.append(
+      element('strong', 'buyer-map-preview-price', price),
+      element('h3', '', home.label),
+    );
+    const { beds, baths, sqft, property_type: type } = home.facts;
+    const facts = [
+      Number.isFinite(beds) && `${beds} ${beds === 1 ? 'bed' : 'beds'}`,
+      Number.isFinite(baths) && `${baths} ${baths === 1 ? 'bath' : 'baths'}`,
+      Number.isFinite(sqft) && `${countFormat.format(sqft)} sq ft`,
+      type,
+    ].filter(Boolean);
+    if (facts.length) copy.append(element('p', '', facts.join(' · ')));
+    copy.append(previewLink(home.url));
+    card.append(photo, copy);
+    return card;
+  }
+
+  async function loadPreview(pin, popup, { signal }, focusLink) {
+    const endpoint = new URL(pin.url, document.baseURI);
+    endpoint.pathname += '/map-preview';
+    let content;
+    try {
+      const response = await fetch(endpoint, { signal });
+      if (response.status === 404) {
+        content = element('p', 'buyer-map-preview-status', 'This home is no longer available on the map.');
+      } else {
+        if (!response.ok) throw new Error('Cannot load home preview');
+        const home = await response.json();
+        if (signal.aborted || !popup.isOpen()) return;
+        content = previewCard(home);
+      }
+    } catch {
+      if (signal.aborted) return;
+      content = element('div', 'buyer-map-preview-status', 'Home preview unavailable.');
+      content.append(previewLink(pin.url));
+    }
+    if (signal.aborted || !popup.isOpen()) return;
+    content.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      popup.remove();
+    });
+    popup.setContent(content);
+    if (focusLink) content.querySelector('a')?.focus({ preventScroll: true });
+  }
+
   function buildMarker(pin) {
     const name = `${pin.label} · ${fullPrice.format(pin.price)}`;
-    return L.marker(pin.point, {
+    const marker = L.marker(pin.point, {
       title: name,
       riseOnHover: true,
       icon: L.divIcon({
         className: 'buyer-price-marker', html: `<span>${shortPrice.format(pin.price)}</span>`,
         iconSize: [74, 31], iconAnchor: [37, 15],
       }),
-    }).bindPopup(() => {
-      const popup = document.createElement('div');
-      popup.className = 'buyer-map-popup';
-      const link = document.createElement('a');
-      link.href = pin.url;
-      link.textContent = name;
-      popup.append(link);
-      return popup;
+    }).bindPopup('Loading home preview…', {
+      className: 'buyer-property-popup',
+      maxWidth: 300,
+      autoPanPadding: [16, 16],
     });
+    let request;
+    let openedByKeyboard = false;
+    marker.on('add', () => {
+      const icon = marker.getElement();
+      icon?.setAttribute('aria-label', name);
+      icon?.setAttribute('aria-expanded', 'false');
+      icon?.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (marker.isPopupOpen()) marker.closePopup();
+        else {
+          openedByKeyboard = true;
+          marker.openPopup();
+        }
+      });
+    });
+    marker.on('popupopen', ({ popup }) => {
+      marker.getElement()?.setAttribute('aria-expanded', 'true');
+      popup.setContent(element('p', 'buyer-map-preview-status', 'Loading home preview…'));
+      request = new AbortController();
+      loadPreview(pin, popup, request, openedByKeyboard);
+    });
+    marker.on('popupclose', ({ popup }) => {
+      request?.abort();
+      marker.getElement()?.setAttribute('aria-expanded', 'false');
+      popup.setContent('Loading home preview…');
+      const focused = document.activeElement;
+      if (openedByKeyboard && (focused === document.body || panel.contains(focused))
+          && results.dataset.layout !== 'list') marker.getElement()?.focus({ preventScroll: true });
+      openedByKeyboard = false;
+    });
+    return marker;
   }
 
   function createMap(pins) {
@@ -113,6 +219,8 @@
     if (layout !== 'list') {
       if (map) map.invalidateSize();
       else showMap();
+    } else {
+      map?.closePopup();
     }
   }
 

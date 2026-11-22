@@ -43,6 +43,14 @@ PYTHON
 
 To stop publication, use the same Compose settings and `stop buyer-publisher`. To roll back code, rebuild from the last working checkout with the private inputs and output directory intact. A buyer web service needs a separately configured read-only mount of the catalog directory and approved HTTPS routing.
 
+## MLS listing record
+
+Source and listing credit permissions control the attribution. The MLS number also requires a publishable address because external lookups can reveal the street address. With source and listing freshness permissions, the listing record shows the ConnectMLS modification date and the UTC time Flip Finder checked the listing details. Older catalogs can show the inventory check date until republished.
+
+## Listing photos
+
+When a source and listing allow media, the publisher uses the gallery URLs supplied by ConnectMLS. MLSListings serves JPEGs through an extensionless endpoint, and CRMLS can supply a JPEG with the `X-Large` preset. The buyer service checks the URL again, validates the image, strips metadata and rechecks publication before serving it. Photo categories add browsing information independently of basic photo availability. Sold listing photos also require the source's `publish_sold_photos` setting.
+
 ## Property type categories
 
 The publisher stores a buyer-facing category only when the source and listing both allow property type, and the feed has a recognized classification. It prefers the more specific ConnectMLS detail field. It can use a listing-level text label when the detail supplies an unknown code. For example, a record with detail `107` and listing-level `Farm / Ranch` uses the explicit ranch label. A standalone `109` remains uncategorized. Listings with uncertain or withheld classifications remain available under **Any**.

@@ -15,8 +15,8 @@ from pymongo import MongoClient
 
 from mls_geography import BAY_COUNTIES
 from buyer_listing_facts import FACT_KEYS, public_facts, public_text
-from buyer_media import approved_mls_photo_url
-from buyer_photo_labels import CATEGORIES, apply_bulk_categories
+from buyer_media import approved_mls_gallery
+from buyer_photo_labels import CATEGORIES, apply_bulk_categories, gallery_category
 from buyer_property_types import listing_property_type
 from buyer_publish import FIELDS, publish
 
@@ -32,7 +32,8 @@ PROJECTION = {key: 1 for key in (
     *MAPPED.values(), *FACT_KEYS, 'CLOSE_DATE', 'CLOSE_PRICE', 'photos',
     'SALE_OR_RENT', 'details.SALE_OR_RENT', 'details.CLOSE_DATE', 'details.CLOSE_PRICE',
     'details.INTERNET_DISPLAY', 'details.INTERNET_SITES', 'details.PRIMARY_PHOTO_URI',
-    'details.PUBLIC_REMARKS', 'details.Baths', 'PROPERTY_SUB_TYPE', 'details.PROPERTY_SUB_TYPE',
+    'details.PUBLIC_REMARKS', 'details.Baths', 'details.MODIFICATION_TIMESTAMP',
+    'PROPERTY_SUB_TYPE', 'details.PROPERTY_SUB_TYPE',
     'details.PROPERTY_TYPE', *(f'details.{key}' for key in FACT_KEYS),
 )}
 
@@ -74,6 +75,32 @@ def read_stamp(value):
     if not isinstance(value, datetime):
         return None
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def listing_update_date(value):
+    # ConnectMLS sends this value without a time zone. Keep its source calendar date.
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value, '%m/%d/%Y %I:%M %p').date().isoformat()
+        except ValueError:
+            pass
+    stamp = read_stamp(value)
+    return stamp.date().isoformat() if stamp else None
+
+
+def listing_baths(doc, details):
+    full = integer_amount(details.get('BATHROOMS_FULL'))
+    half = integer_amount(details.get('BATHROOMS_HALF'))
+    if full is not None and half is not None:
+        return full + half / 2
+    for value in (details.get('Baths'), details.get('BATHS_DISPLAY'), doc.get('BATHS_DISPLAY')):
+        if match := re.fullmatch(r'(\d+)\s*/\s*(\d+)', str(value).strip()):
+            whole, fractional = map(int, match.groups())
+            return whole + fractional / 2
+        if re.fullmatch(r'\d+(?:\.\d+)?', str(value).strip()):
+            return float(value)
+    full = full if full is not None else integer_amount(doc.get('BATHROOMS_FULL'))
+    return full + (half or 0) / 2 if full is not None else None
 
 
 def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, bulk_classifications=None, now=None):
@@ -135,25 +162,20 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
 
         row = {'source': source, 'market': market, 'status': 'Sold' if market == 'sold' else 'Active',
                'updated': refreshed.isoformat(),
+               'details_checked': permission_checked.isoformat(timespec='minutes'),
+               'listing_updated': listing_update_date(details.get('MODIFICATION_TIMESTAMP')),
                'id': hmac.new(id_key, stable_key.encode(), hashlib.sha256).hexdigest()[:32],
                'policy': {'basis': f'{source}: INTERNET_DISPLAY={display}',
                           'effective': max(refreshed, permission_checked).isoformat(), 'refresh_by': expires.isoformat(),
                           'allow': permissions},
-               'credit': {'source': config.get('credit_name', source)}}
+               'credit': {'source': config.get('credit_name', source), 'mls_id': listing_id}}
         for key, field in MAPPED.items():
             if field in doc:
                 row[key] = doc[field]
         row['property_type'] = listing_property_type(doc, details)
         for name in ('beds', 'sqft', 'lot_sqft', 'year_built'):
             row[name] = integer_amount(row.get(name, details.get(MAPPED[name])))
-        bath_display = details.get('Baths') or details.get('BATHS_DISPLAY') or ''
-        matched_baths = re.fullmatch(r'(\d+)\s*/\s*(\d+)', str(bath_display))
-        full = integer_amount(details.get('BATHROOMS_FULL', row.get('baths')))
-        half = integer_amount(details.get('BATHROOMS_HALF'))
-        if full is None and matched_baths:
-            full, half = map(int, matched_baths.groups())
-        if full is not None:
-            row['baths'] = full + (half or 0) / 2
+        row['baths'] = listing_baths(doc, details)
         if market == 'sold':
             row['price'] = integer_amount(details.get('CLOSE_PRICE') or doc.get('CLOSE_PRICE'))
             row['sale_date'] = close_date.date().isoformat()
@@ -168,11 +190,12 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
             row['coordinates'] = [doc['LATITUDE'], doc['LONGITUDE']]
         if config.get('publish_source_photos') is True and permissions['media'] and permissions['address']:
             gallery = doc.get('photos') or []
-            photo_urls = [details.get('PRIMARY_PHOTO_URI'), *gallery]
+            photo_urls = approved_mls_gallery(details.get('PRIMARY_PHOTO_URI'), gallery)
             labels = photo_labels.get(listing_id, {})
             row['media'] = [
-                {'display': True, 'mls_photo_url': url, 'category': labels.get(url)}
-                for url in dict.fromkeys(url for url in photo_urls if approved_mls_photo_url(url))
+                {'display': True, 'mls_photo_url': url, 'category': gallery_category(labels, url, aliases),
+                 **({'_photo_aliases': aliases} if aliases else {})}
+                for url, aliases in photo_urls
             ]
         for key in ('media', 'reviewed_public_remarks', 'remarks_dependency_free', 'analysis_origin',
                     'cost_items', 'cost_version', 'cost_dependency_free', 'partial_budget', 'analysis_date'):

@@ -77,7 +77,76 @@ body:has(.buyer) .nav a:focus-visible { outline:3px solid #1d8467; outline-offse
 .buyer-price-marker:hover span, .buyer-price-marker:focus-visible span { background:var(--buyer-green); color:#fff; }
 .buyer-cluster-marker span { display:grid; place-items:center; width:100%; height:100%; background:var(--buyer-green); border:2px solid #fff; border-radius:50%; box-shadow:0 0 0 4px #18513e38, 0 2px 8px #0003; color:#fff; font-size:.9rem; font-weight:800; }
 .buyer-cluster-marker:hover span, .buyer-cluster-marker:focus-visible span { background:#23745a; }
-.buyer-map-popup a { display:block; color:var(--buyer-green); padding:5px 0; font-weight:750; }
+.buyer-property-popup .leaflet-popup-content-wrapper {
+  padding:0;
+  overflow:hidden;
+  border:1px solid var(--buyer-line);
+  border-radius:12px;
+  box-shadow:0 6px 22px #163a2d45;
+}
+.buyer-property-popup .leaflet-popup-content { margin:0; }
+.buyer-property-popup .leaflet-popup-content p { margin:6px 0; }
+.leaflet-container .buyer-property-popup a.leaflet-popup-close-button {
+  display:grid;
+  place-items:center;
+  top:7px;
+  right:7px;
+  width:36px;
+  height:36px;
+  border:1px solid var(--buyer-line);
+  border-radius:50%;
+  background:#fff;
+  color:var(--buyer-ink);
+  font-size:21px;
+  box-shadow:0 2px 10px #163a2d25;
+}
+.leaflet-container .buyer-property-popup a.leaflet-popup-close-button:hover { background:#e8f2ec; }
+.buyer-map-preview { width:clamp(168px, calc(100vw - 80px), 288px); }
+.buyer-map-preview-photo {
+  position:relative;
+  display:grid;
+  place-items:center;
+  width:100%;
+  aspect-ratio:2 / 1;
+  overflow:hidden;
+  color:var(--buyer-muted);
+  background:#e6efe7;
+}
+.buyer-map-preview-photo img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.buyer-map-preview-copy { padding:10px 13px 12px; }
+.buyer-map-preview-price { display:block; color:var(--buyer-ink); font-size:1.3rem; letter-spacing:-.025em; }
+.buyer-map-preview h3 { margin:3px 0 0; color:var(--buyer-ink); font-size:.94rem; overflow-wrap:anywhere; }
+.buyer-map-preview p { color:var(--buyer-muted); font-size:.875rem; }
+.buyer-property-popup .buyer-map-preview-link {
+  display:inline-flex;
+  align-items:center;
+  min-height:36px;
+  color:var(--buyer-green);
+  font-size:.875rem;
+  font-weight:800;
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
+.buyer-property-popup .buyer-map-preview-status { padding:36px 12px 12px; width:190px; }
+.buyer-property-popup .leaflet-popup-content > p.buyer-map-preview-status { margin:0; }
+.buyer-search-page { max-width:2060px; }
+@media (min-width:801px) {
+  .buyer-search-page { padding-inline:clamp(18px, 2.05vw, 42px); }
+  .buyer-search-page .buyer-results { gap:clamp(16px, 1.5vw, 28px); }
+  .buyer-search-page .buyer-results[data-layout=split] {
+    grid-template-columns:minmax(0, 1fr) minmax(0, 1.26fr);
+  }
+  .buyer-search-page .buyer-results[data-layout=split] .buyer-cards {
+    grid-template-columns:repeat(auto-fill, minmax(min(100%, 224px), 1fr));
+  }
+  .buyer-search-page #buyer-street-map { height:clamp(520px, 74dvh, 980px); }
+  .buyer-search-page [data-layout=map] #buyer-street-map { height:clamp(540px, 79dvh, 1080px); }
+}
+@media (min-width:1320px) {
+  .buyer-search-page .buyer-results[data-layout=list] .buyer-cards {
+    grid-template-columns:repeat(4, minmax(0, 1fr));
+  }
+}
 .pagination,.queue-nav { display:flex; gap:18px; align-items:center; margin:20px 0; }
 .form-shell { max-width:660px; padding:clamp(20px,5vw,40px); margin:10px auto 0; }
 .form-shell h1 { font-size:clamp(1.85rem,4.5vw,3rem); }
@@ -215,6 +284,11 @@ body:has(.buyer) .nav a:focus-visible { outline:3px solid #1d8467; outline-offse
 .buyer .search-type-apply { justify-self: end; }
 @media (max-width:800px) {
   .search-type-filter .search-filter-panel { left: 0; right: auto; width: min(520px, 100%); }
+}
+@media (min-width:801px) and (max-width:1030px) {
+  .buyer-search-page .search-filter-groups { position:relative; }
+  .buyer-search-page .search-type-filter { position:static; }
+  .buyer-search-page .search-type-filter .search-filter-panel { left:0; right:auto; }
 }
 @media (max-width:700px) {
   .search-type-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

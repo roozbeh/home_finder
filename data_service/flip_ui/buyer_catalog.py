@@ -126,6 +126,17 @@ class Catalog:
             """, params).fetchall()
         return [(row['id'], row['price'], row['label'], json.loads(row['coordinates'])) for row in rows]
 
+    def map_home(self, mode, filters, public_id):
+        if not self.path.is_file():
+            return None
+        matched, params = self._matching(mode, filters)
+        with self._connect() as db:
+            row = db.execute(f"""
+                SELECT payload FROM homes {matched}
+                AND id = ? AND json_type(payload, '$.coordinates') = 'array'
+            """, (*params, public_id)).fetchone()
+        return current_payload(row[0], params[0]) if row else None
+
     def get(self, mode, public_id):
         if not self.path.is_file():
             return None

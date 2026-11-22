@@ -77,6 +77,49 @@ class BuyerJourneyTest(unittest.TestCase):
         publish(self.manifest, self.path, ASSETS)
         self.assertIsNotNone(Catalog(self.path).get('approved', FAIRFIELD))
 
+    def test_mls_listing_record_respects_credit_address_and_update_permissions(self):
+        url = f'/homes/{FAIRFIELD}'
+        home = self.manifest['homes'][0]
+        source = self.manifest['sources']['fixture']['allow']
+        listing = home['policy']['allow']
+        home['credit'] = {'source': 'MLS credit', 'mls_id': 'ML123456', 'agent_email': PRIVATE}
+        home['listing_updated'] = '2026-11-07'
+        home['details_checked'] = '2026-11-22T09:15:54-08:00'
+        for field in ('credits', 'updated'):
+            source[field] = listing[field] = True
+        publish(self.manifest, self.path, ASSETS)
+        body = self.client.get(url).data
+        for value in (b'ML123456', b'2026-11-07', b'2026-11-22 at 17:15 UTC'):
+            self.assertIn(value, body)
+        self.assertNotIn(PRIVATE.encode(), body)
+
+        for permissions, field, hidden, visible in (
+            (listing, 'address', b'ML123456', b'MLS credit'),
+            (source, 'credits', b'ML123456', b'Listing updated by MLS'),
+            (listing, 'updated', b'2026-11-07', b'ML123456'),
+        ):
+            with self.subTest(field=field):
+                permissions[field] = False
+                publish(self.manifest, self.path, ASSETS)
+                body = self.client.get(url).data
+                self.assertNotIn(hidden, body)
+                self.assertIn(visible, body)
+                permissions[field] = True
+
+    def test_live_listing_update_uses_provider_calendar_date(self):
+        from buyer_live_feed import listing_update_date
+
+        self.assertEqual(listing_update_date('11/07/2026 04:31 PM'), '2026-11-07')
+        self.assertIsNone(listing_update_date('unknown'))
+
+    def test_live_listing_baths_follow_mls_display_formats(self):
+        from buyer_live_feed import listing_baths
+
+        self.assertEqual(listing_baths({}, {'Baths': '2'}), 2)
+        self.assertEqual(listing_baths({'BATHROOMS_FULL': 2}, {'Baths': '2/1'}), 2.5)
+        self.assertEqual(listing_baths({}, {'BATHROOMS_FULL': '1', 'BATHROOMS_HALF': '1'}), 1.5)
+        self.assertIsNone(listing_baths({}, {'Baths': '--'}))
+
     def test_public_surfaces_and_filters(self):
         for path in ('/', '/homes', f'/homes/{FAIRFIELD}', f'/homes/{PENDING}', f'/homes/{SUPPRESSED}',
                      f'/homes/{LIMITED}', f'/homes/{FAIRFIELD}/contact'):
@@ -146,6 +189,40 @@ class BuyerJourneyTest(unittest.TestCase):
         self.assertIn(FAIRFIELD.encode(), self.client.get('/homes').data)
         self.assertEqual(self.client.get('/homes/property-type-count?property_type=condos-co-ops').json, {'count': 0})
 
+    def test_map_preview_uses_permitted_facts_media_and_rechecks_filters(self):
+        listing = f'/homes/{FAIRFIELD}'
+        bulk = self.client.get('/homes/map-data?city=Fairfield').json
+        self.assertEqual(len(bulk), 1)
+        self.assertEqual(set(bulk[0]), {'point', 'label', 'price', 'url'})
+        response = self.client.get(f'{listing}/map-preview?city=Fairfield&property_type=houses&page=2')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('no-store', response.headers['Cache-Control'])
+        card = response.json
+        self.assertEqual(card['price'], 460_000)
+        self.assertEqual(card['facts']['beds'], 3)
+        self.assertIn('property_type=houses&page=2', card['url'])
+        self.assertTrue(card['photo'].startswith(listing + '/media/'))
+        self.assertEqual(self.client.get(card['photo']).status_code, 200)
+        for private in (PRIVATE, 'coordinates', 'resale', 'credit', 'remark'):
+            self.assertNotIn(private, response.get_data(as_text=True))
+        self.assertEqual(self.client.get(f'{listing}/map-preview?city=Oakland').status_code, 404)
+        self.assertEqual(self.client.get(f'/homes/{SUPPRESSED}/map-preview').status_code, 404)
+        self.assertIsNone(self.client.get(f'/homes/{LIMITED}/map-preview').json['photo'])
+
+        row = self.manifest['homes'][0]
+        row['policy'] = deepcopy(row['policy'])
+        row['policy']['allow']['sqft'] = False
+        row['policy']['allow']['media'] = False
+        publish(self.manifest, self.path, ASSETS)
+        limited = self.client.get(f'{listing}/map-preview').json
+        self.assertNotIn('sqft', limited['facts'])
+        self.assertIsNone(limited['photo'])
+        self.assertEqual(self.client.get(card['photo']).status_code, 404)
+        row['policy']['allow']['geolocation'] = False
+        publish(self.manifest, self.path, ASSETS)
+        self.assertEqual(self.client.get(f'{listing}/map-preview').status_code, 404)
+        self.assertEqual(self.client.get(listing).status_code, 200)
+
     def test_withdraw_after_warming_search_detail_media_and_form(self):
         path = f'/homes/{FAIRFIELD}'
         warm = self.client.get(path)
@@ -160,7 +237,7 @@ class BuyerJourneyTest(unittest.TestCase):
                 'name': 'Test Buyer', 'channel': 'email', 'contact': 'buyer@example.test'}
         self.manifest['homes'][0]['withdrawn'] = True
         publish(self.manifest, self.path, ASSETS)
-        for suffix in ('', '/contact', f'/media/{asset}'):
+        for suffix in ('', '/contact', '/map-preview', f'/media/{asset}'):
             response = self.client.get(path + suffix, headers={'If-None-Match': '*'})
             self.assertEqual(response.status_code, 404)
             self.assertIn('no-store', response.headers['Cache-Control'])

@@ -7,21 +7,60 @@ MLS_PHOTO_HOSTS = frozenset({
     'media.mlslmedia.com', 'sfarmedia.rapmls.com',
     'bridgemls-assets.cdn-connectmls.com', 'media.crmls.org',
 })
+MLS_LISTINGS_PHOTO = re.compile(r'/property/MLSL/[0-9]{8}/[0-9a-fA-F]{32}/[0-9]{1,4}/[0-9]{1,3}')
+CRMLS_PHOTO = re.compile(r'/medias/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.jpg', re.I)
 NEXT_MARKER = re.compile(rb'\xff[\x01-\xcf\xd8-\xff]')
 
 
 def approved_mls_photo_url(url):
-    if not isinstance(url, str):
+    if not isinstance(url, str) or re.search(r'[\x00-\x20\x7f]', url):
         return None
     try:
         parts = urlsplit(url)
     except ValueError:
         return None
     if (parts.scheme != 'https' or parts.netloc not in MLS_PHOTO_HOSTS
-            or parts.query or parts.fragment or not re.fullmatch(r'/[a-zA-Z0-9/_.-]+\.jpe?g', parts.path, re.I)
+            or parts.fragment
             or any(segment in ('.', '..') for segment in parts.path.split('/'))):
         return None
-    return url
+    if parts.query:
+        # The CRMLS detail payload can supply only this public size preset.
+        if (parts.netloc == 'media.crmls.org' and parts.query == 'preset=X-Large'
+                and CRMLS_PHOTO.fullmatch(parts.path)):
+            return url
+        return None
+    if re.fullmatch(r'/[a-zA-Z0-9/_.-]+\.jpe?g', parts.path, re.I):
+        return url
+    # ConnectMLS supplies MLSListings JPEGs at this provider endpoint without a file extension.
+    if parts.netloc == 'media.mlslmedia.com' and MLS_LISTINGS_PHOTO.fullmatch(parts.path):
+        return url
+    return None
+
+
+def approved_mls_gallery(primary, gallery):
+    """Keep provider order and retain supplied URL aliases for category lookups."""
+    photos = {}
+    for candidate in (primary, *gallery):
+        url = approved_mls_photo_url(candidate)
+        if not url:
+            continue
+        parts = urlsplit(url)
+        if parts.netloc == 'media.mlslmedia.com' and MLS_LISTINGS_PHOTO.fullmatch(parts.path):
+            prefix, size, index = url.rsplit('/', 2)
+            key = f'{prefix}/{index}'
+            preferred = size == '2'  # Full gallery size, when supplied alongside a thumbnail.
+        else:
+            key = url.partition('?')[0]
+            preferred = not parts.query
+        previous = photos.get(key)
+        if previous is None:
+            photos[key] = url, preferred, []
+        elif url != previous[0] and url not in previous[2]:
+            if preferred and not previous[1]:
+                photos[key] = url, preferred, [previous[0], *previous[2]]
+            else:
+                previous[2].append(url)
+    return [(url, aliases) for url, _, aliases in photos.values()]
 
 
 class NoPhotoRedirect(HTTPRedirectHandler):

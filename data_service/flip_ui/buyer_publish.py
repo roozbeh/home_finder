@@ -6,7 +6,7 @@ import os
 import re
 import sqlite3
 import tempfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from buyer_analysis import comparable_sales, project_matches, scopes
@@ -131,7 +131,24 @@ def project(manifest, row, asset_dir):
         if remarks:
             home['remarks'] = remarks
     if 'credits' in allow:
-        home['credit'] = {key: str(row.get('credit', {}).get(key, '')) for key in ('source',)}
+        credit = row.get('credit', {})
+        home['credit'] = {'source': str(credit.get('source', ''))}
+        listing_id = credit.get('mls_id')
+        # A listing number can reveal a withheld address through another service.
+        if address_ok and isinstance(listing_id, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,31}', listing_id):
+            home['credit']['mls_id'] = listing_id
+    if 'updated' in allow:
+        try:
+            checked = datetime.fromisoformat(row['details_checked'])
+            if checked.tzinfo is not None:
+                checked = checked.astimezone(timezone.utc)
+                home['details_checked'] = checked.isoformat(timespec='minutes')
+        except (KeyError, TypeError, ValueError):
+            pass
+        try:
+            home['listing_updated'] = date.fromisoformat(row['listing_updated']).isoformat()
+        except (KeyError, TypeError, ValueError):
+            pass
     for key in ('days_on_market', 'auction', 'bank_owned'):
         if key in allow and key in row:
             home[key] = row[key]
