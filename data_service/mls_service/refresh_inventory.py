@@ -16,6 +16,13 @@ from search_and_store import (
 
 ACTIVE = ("ACTV", "NEW", "BOMK", "PCH")
 STATUS_CHECK_LIMIT = 5
+STALE_INVENTORY_DAYS = 15
+DISPLAY_CHECK_DAYS = 10
+LEGACY_CITY_ALIASES = {
+    "REDWOODCIY": "REDWOOD CITY",
+    "HILLSBOROU": "HILLSBOROUGH",
+    "SOUTH SAN": "SOUTH SAN FRANCISCO",
+}
 STANDARD_DETAIL_LIMIT = 450
 STANDARD_GALLERY_LIMIT = 100
 DETAIL_FIELDS = {
@@ -69,13 +76,16 @@ def record_misses(collection, complete_cities, seen_at):
     if not complete_cities:
         return
     cities = sorted(complete_cities)
+    legacy_cities = sorted(complete_cities | {
+        alias for alias, city in LEGACY_CITY_ALIASES.items() if city in complete_cities
+    })
     missed = {
         # The inventory search requests ACTV only. An absence tells us
         # nothing about other source codes such as pending or back-on-market.
         "RAW_STATUS": "ACTV", "active_last_seen_at": {"$ne": seen_at},
         "$or": [
             {"active_search_city": {"$in": cities}},
-            {"active_search_city": {"$exists": False}, "CITY": {"$in": cities}},
+            {"active_search_city": {"$exists": False}, "CITY": {"$in": legacy_cities}},
         ],
     }
     # Require two complete cycle observations separated in time. Fast reruns
@@ -97,9 +107,24 @@ def detail_work(collection, as_of, checks_due_days, limit):
     available = {"DCID": {"$exists": True, "$nin": ["", None]},
                  "$or": [{"refresh_retry_after": {"$exists": False}}, {"refresh_retry_after": {"$lte": as_of}}]}
     active = {"RAW_STATUS": {"$in": list(ACTIVE)}}
-    queued_status = list(collection.find(
-        {**available, **active, "active_status_next_check": {"$lte": as_of}}, DETAIL_FIELDS,
-    ).sort([("_updated_at", -1), ("active_status_next_check", 1), ("_id", 1)]).limit(min(STATUS_CHECK_LIMIT, limit)))
+    stale_before = as_of - timedelta(days=STALE_INVENTORY_DAYS)
+    stale_inventory = {"$or": [
+        {"active_last_seen_at": {"$lt": stale_before}},
+        {"active_last_seen_at": None, "_updated_at": {"$lt": stale_before}},
+    ]}
+    due_status = {**available, **active, "active_status_next_check": {"$lte": as_of}}
+    status_limit = min(STATUS_CHECK_LIMIT, limit)
+    overdue = list(collection.find({"$and": [due_status, stale_inventory]}, DETAIL_FIELDS)
+                   .sort([("active_status_next_check", 1), ("_updated_at", 1), ("_id", 1)]).limit(status_limit))
+    recent_misses = list(collection.find({**due_status, "$nor": [stale_inventory]}, DETAIL_FIELDS)
+                         .sort([("active_status_next_check", 1), ("_id", 1)]).limit(status_limit))
+    # Reserve both lanes and let either borrow unused slots from the other.
+    stale_slots = (status_limit + 1) // 2
+    recent_slots = status_limit - stale_slots
+    queued_status = (overdue[:stale_slots] + recent_misses[:recent_slots]
+                     + overdue[stale_slots:] + recent_misses[recent_slots:])[:status_limit]
+    print(f"Status queue selected: {sum(row in overdue for row in queued_status)} stale inventory, "
+          f"{sum(row in recent_misses for row in queued_status)} recent misses")
     for row in queued_status:
         yield "status", row
 
@@ -248,7 +273,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--deadline", type=float, default=None, help="UTC Unix time when MLS work must stop")
     parser.add_argument("--limit", type=int, default=25, help="maximum extra status and display checks per cycle")
-    parser.add_argument("--display-check-days", type=int, default=75)
+    parser.add_argument("--display-check-days", type=int, default=DISPLAY_CHECK_DAYS)
     parser.add_argument("--storage-mb", type=float, default=4500)
     parser.add_argument("--plan", action="store_true", help="Show queued work from the latest observation without writes")
     args = parser.parse_args()

@@ -56,7 +56,8 @@ class RefreshIntegrationTest(unittest.TestCase):
 
     def seed(self, listing, *, city="ATHERTON", status="ACTV", **extra):
         self.col.insert_one({"LISTING_ID": listing, "DCID": listing, "CITY": city,
-                             "RAW_STATUS": status, "MLS_STATUS": status, "_updated_at": self.old, **extra})
+                             "RAW_STATUS": status, "MLS_STATUS": status,
+                             **{"_updated_at": self.old, **extra}})
 
     def observe(self, listing, when):
         search.upsert_listings([{"LISTING_ID": listing, "DCID": listing, "CITY": "ATHERTON",
@@ -88,6 +89,39 @@ class RefreshIntegrationTest(unittest.TestCase):
         self.assertEqual(confirmed["RAW_STATUS"], "WC")
         self.assertEqual(confirmed["details"]["status"], "WC")
         self.assertNotIn("active_status_next_check", confirmed)
+
+    def test_legacy_city_aliases_require_complete_canonical_search(self):
+        aliases = {"REDWOODCIY": "REDWOOD CITY", "HILLSBOROU": "HILLSBOROUGH",
+                   "SOUTH SAN": "SOUTH SAN FRANCISCO"}
+        for alias in (*aliases, "PORTO"):
+            self.seed(alias, city=alias)
+        second = self.now + timedelta(minutes=15)
+        refresh.record_misses(self.col, set(aliases.values()), self.now)
+        refresh.record_misses(self.col, set(aliases.values()) - {"HILLSBOROUGH"}, second)
+        self.assertEqual(self.col.count_documents({"active_status_next_check": second}), 2)
+        self.assertNotIn("active_status_next_check", self.col.find_one({"CITY": "HILLSBOROU"}))
+        self.assertNotIn("active_missing_since", self.col.find_one({"CITY": "PORTO"}))
+
+    def test_status_queue_reserves_stale_and_recent_checks(self):
+        for index in range(6):
+            self.seed(f"old-{index}", active_status_next_check=self.now + timedelta(seconds=index))
+            self.seed(f"recent-{index}", active_status_next_check=self.now - timedelta(hours=1),
+                      active_last_seen_at=self.now - timedelta(days=2))
+        work = list(refresh.detail_work(self.col, self.now + timedelta(minutes=1), 10, 25))
+        selected = [row["LISTING_ID"] for lane, row in work if lane == "status"]
+        self.assertEqual(selected[:3], ["old-0", "old-1", "old-2"])
+        self.assertEqual(len(selected[3:]), 2)
+        self.assertTrue(all(name.startswith("recent-") for name in selected[3:]))
+        self.col.delete_many({"LISTING_ID": {"$regex": "^recent-"}})
+        work = list(refresh.detail_work(self.col, self.now + timedelta(minutes=1), 10, 25))
+        self.assertEqual([row["LISTING_ID"] for lane, row in work if lane == "status"],
+                         [f"old-{index}" for index in range(5)])
+
+    def test_detail_rechecks_begin_before_dashboard_window(self):
+        self.seed("due", active_last_seen_at=self.now, details_fetched=self.now - timedelta(days=11))
+        self.seed("current", active_last_seen_at=self.now, details_fetched=self.now - timedelta(days=9))
+        work = list(refresh.detail_work(self.col, self.now, refresh.DISPLAY_CHECK_DAYS, 25))
+        self.assertEqual([(lane, row["LISTING_ID"]) for lane, row in work], [("display check", "due")])
 
     def test_refreshes_oldest_current_before_recent_and_historical_sales(self):
         self.seed("current-old", active_last_seen_at=self.now, details_fetched="August 20 2026 12:00AM")

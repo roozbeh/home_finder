@@ -65,5 +65,5 @@ docker cp mls_service/refresh_inventory.py "$WORKER_CONTAINER":/tmp/refresh_inve
 docker exec "$WORKER_CONTAINER" python -u /tmp/refresh_inventory.py \
   --deadline "$((CYCLE_STARTED + ${FLIP_FINDER_CYCLE_SECONDS:-780}))" \
   --limit "${FLIP_FINDER_DETAIL_LIMIT:-25}" \
-  --display-check-days "${FLIP_FINDER_DISPLAY_CHECK_DAYS:-75}" --storage-mb 4500
+  --display-check-days "${FLIP_FINDER_DISPLAY_CHECK_DAYS:-10}" --storage-mb 4500
 echo "[$(date -Is)] live fetcher completed"
