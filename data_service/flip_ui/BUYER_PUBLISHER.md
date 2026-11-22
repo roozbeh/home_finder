@@ -51,6 +51,12 @@ Source and listing credit permissions control the attribution. The MLS number an
 
 When a source and listing allow media, the publisher uses the gallery URLs supplied by ConnectMLS. MLSListings serves JPEGs through an extensionless endpoint, and CRMLS can supply a JPEG with the `X-Large` preset. The buyer service checks the URL again, validates the image, strips metadata and rechecks publication before serving it. Photo categories add browsing information independently of basic photo availability. Sold listing photos also require the source's `publish_sold_photos` setting.
 
+## FlipFinder filters and saved recommendations
+
+The search, map and counts use the same published filters. A home has categorized photos when its public gallery has at least one category. Good investment compares modeled proceeds against costs at the current asking price using the default scope or reviewed assessment. A profit above zero matches Yes, a break-even or loss matches No, and estimates based on a partial scope or unavailable analyses match neither.
+
+Structured recommendations require published renovation work and eligible resale evidence, and expire with the earliest supporting comparable. For an existing admin assessment, a reviewer can approve the exact saved revision after reviewing the scope, source rights and dependencies. On the corresponding `reviewed_listings` entry, set `purchase_assessment_created_at` to the assessed version's exact UTC creation timestamp and `purchase_assessment_refresh_by` to the review expiry. The source and listing must permit `derived`, `valuation`, `sold_comps` and AI-derived material (`ai`). A changed revision needs a new review. Only the numerical inputs needed to calculate the public recommendation are copied. The admin notes, exact comparable IDs and raw model output stay private.
+
 ## Property type categories
 
 The publisher stores a buyer-facing category only when the source and listing both allow property type, and the feed has a recognized classification. It prefers the more specific ConnectMLS detail field. It can use a listing-level text label when the detail supplies an unknown code. For example, a record with detail `107` and listing-level `Farm / Ranch` uses the explicit ranch label. A standalone `109` remains uncategorized. Listings with uncertain or withheld classifications remain available under **Any**.

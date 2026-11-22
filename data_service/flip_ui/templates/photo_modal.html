@@ -6,5 +6,5 @@
     <button type="button" class="photo-modal-next" aria-label="Next photo">›</button>
   </div>
 </dialog>
-<script id="property-photo-data" type="application/json">{{ listing.photos|tojson }}</script>
+<script id="property-photo-data" type="application/json">{{ (gallery_photo_urls if gallery_photo_urls is defined else listing.photos)|tojson }}</script>
 <script src="{{ url_for('static',filename='photo-modal.js') }}"></script>

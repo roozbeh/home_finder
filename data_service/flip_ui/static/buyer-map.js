@@ -54,21 +54,32 @@
     }
 
     const copy = element('div', 'buyer-map-preview-copy');
+    const heading = element('div', 'buyer-map-preview-heading');
     const price = fullPrice.format(home.price) + (home.market === 'rent' ? ' / mo' : '');
-    copy.append(
+    const action = previewLink(home.url);
+    heading.append(
       element('strong', 'buyer-map-preview-price', price),
-      element('h3', '', home.label),
+      action,
     );
-    if (home.locality) copy.append(element('p', 'buyer-map-preview-locality', home.locality));
-    const { beds, baths, sqft, property_type: type } = home.facts;
+    const fullAddress = home.locality && !home.label.endsWith(home.locality)
+      ? `${home.label}, ${home.locality}` : home.label;
+    const address = element('h3', 'buyer-map-preview-address', fullAddress);
+    address.id = 'buyer-map-preview-address';
+    address.title = fullAddress;
+    action.setAttribute('aria-describedby', address.id);
+    copy.append(heading, address);
+    const { beds, baths, sqft, property_type: type, days_on_market: days } = home.facts;
     const facts = [
       Number.isFinite(beds) && `${beds} ${beds === 1 ? 'bed' : 'beds'}`,
       Number.isFinite(baths) && `${baths} ${baths === 1 ? 'bath' : 'baths'}`,
       Number.isFinite(sqft) && `${countFormat.format(sqft)} sq ft`,
-      type,
     ].filter(Boolean);
-    if (facts.length) copy.append(element('p', '', facts.join(' · ')));
-    copy.append(previewLink(home.url));
+    const listingFacts = [
+      type,
+      Number.isFinite(days) && `${countFormat.format(days)} ${days === 1 ? 'day' : 'days'} on market`,
+    ].filter(Boolean);
+    if (facts.length) copy.append(element('p', 'buyer-map-preview-facts', facts.join(' · ')));
+    if (listingFacts.length) copy.append(element('p', 'buyer-map-preview-facts', listingFacts.join(' · ')));
     card.append(photo, copy);
     return card;
   }

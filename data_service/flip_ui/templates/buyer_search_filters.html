@@ -77,6 +77,22 @@
         {{ apply('more filters') }}
       </div>
     </details>
+    <details class="search-filter">
+      <summary{% if filters.photo_categories or filters.purchase_recommendation or filters.good_investment %} class="selected-filter"{% endif %}>FlipFinder filters</summary>
+      <div class="search-filter-panel">
+        {% for key, label in [('photo_categories', 'Has photo categorization'), ('purchase_recommendation', 'Has recommended purchase price'), ('good_investment', 'Good investment')] %}
+        <label>{{ label }}
+          <select name="{{ key }}"{% if key == 'good_investment' %} aria-describedby="good-investment-help"{% endif %}>
+            {% for value, option in [('', 'Any'), ('yes', 'Yes'), ('no', 'No')] %}
+            <option value="{{ value }}"{% if filters[key] == value %} selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endfor %}
+        <p id="good-investment-help">Based on estimated profit at asking after renovation and modeled costs. Yes and No require a complete published analysis.</p>
+        {{ apply('FlipFinder filters') }}
+      </div>
+    </details>
   </div>
   <button type="submit">Search</button>
   <a class="text-action" href="{{ url_for('buyer.homes') }}">Clear filters</a>

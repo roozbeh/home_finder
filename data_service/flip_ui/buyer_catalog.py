@@ -22,6 +22,7 @@ def current_payload(value, now):
     for expiry, fields in (
         ('sales_expires', ('sales', 'resale')),
         ('projects_expires', ('projects',)),
+        ('recommendation_expires', ('recommendation',)),
     ):
         if data.pop(expiry, now) <= now:
             for key in fields:
@@ -88,6 +89,18 @@ class Catalog:
                 where.append(f'{key} = 1')
         if filters.get('photos_only'):
             where.append("json_array_length(payload, '$.photos') > 0")
+        if choice := filters.get('photo_categories'):
+            grouped = "coalesce(json_extract(payload, '$.photo_groups'), '{}') <> '{}'"
+            where.append(grouped if choice == 'yes' else f'NOT ({grouped})')
+        current_recommendation = """json_type(payload, '$.recommendation') = 'object'
+            AND json_extract(payload, '$.recommendation_expires') > ?"""
+        if choice := filters.get('purchase_recommendation'):
+            condition = f'coalesce(({current_recommendation}), 0)'
+            where.append(condition if choice == 'yes' else f'NOT {condition}')
+            params.append(params[0])
+        if choice := filters.get('good_investment'):
+            where.append(f"({current_recommendation}) AND json_extract(payload, '$.recommendation.profitable') = ?")
+            params.extend((params[0], int(choice == 'yes')))
         return 'WHERE ' + ' AND '.join(where), params
 
     def search(self, mode, filters, page, size=12):

@@ -16,7 +16,7 @@
     {% if analysis and analysis.errors %}<p role="alert">{{ analysis.errors|join(' ') }}</p>{% endif %}
     {% if analysis and (home.scopes.options or analysis.scenario) %}
       <form class="analysis-choices" method="get" action="#renovation">
-        {% for key in ['city','market','min_price','max_price','beds','baths','property_type','min_sqft','min_lot','min_year','dom','reduced','auction','bank_owned','photos_only','page'] %}
+        {% for key in ['city','market','min_price','max_price','beds','baths','property_type','min_sqft','min_lot','min_year','dom','reduced','auction','bank_owned','photos_only','photo_categories','purchase_recommendation','good_investment','page'] %}
           {% for value in request.args.getlist(key) %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
         {% endfor %}
         {% for group, choices in home.scopes.options.items() %}
@@ -100,7 +100,7 @@
   {% endif %}
   {% if analysis.scenario %}
   {% set scenario = analysis.scenario %}
-  <section>
+  <section id="purchase-scenario">
     <h2>Purchase scenario</h2>
     <dl class="scenario-summary">
       <div><dt>Modeled resale</dt><dd>{{ amount(scenario.resale) }}</dd></div>

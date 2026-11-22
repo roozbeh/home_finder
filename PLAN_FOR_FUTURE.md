@@ -18,6 +18,7 @@ The buyer UI and private workflows are implemented. The local signed-out buyer p
 
 ## Processing and capacity
 
+- [ ] Benchmark Gemma 4 12B on reviewed scopes and use dated cost inputs to price validated work. Compare it with 31B only where the paired benchmark shows enough improvement. [Local renovation model benchmark](data_service/photo_categorizer/RENOVATION_MODELS.md)
 - [ ] Check the current Moondream checkpoint, worker liveness, failed galleries and throughput. Confirm saved categories appear for permitted photos after the catalog refresh. Keep processing eligibility separate from publication eligibility. Evaluate optional Gemma/Ollama categorization on a representative rights-cleared set if the existing backfill's accuracy or capacity warrants it.
 - [ ] Use the rights-cleared 100-listing pilot to validate all-photo accounting, resumability, changed photos and prices, comp/price-book updates, spend caps, retry rate and cost per successful listing. Obtain provider terms, a production budget and local cost evidence before enabling paid processing or expanding coverage. Separate fixture metering, actual spend and projected cost.
 - [ ] Run the signed-out 20-request/second test against the target deployment and a representative catalog. Record request latency, errors, database work and image traffic before changing instance size. Monitor the 15-minute and nightly jobs, stale listing counts, MLS failures and storage independently. [Photo operations](data_service/photo_categorizer/ACTIVE_LISTINGS.md)

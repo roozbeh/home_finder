@@ -1,0 +1,17 @@
+{% if home.credit or home.updated or home.listing_updated or home.details_checked or home.days_on_market is defined %}
+  <p class="property-credit">
+    {% if home.credit and (home.credit.agent or home.credit.office) %}
+    <span>Listed by
+      {% if home.credit.agent %}<strong>{{ home.credit.agent }}</strong>{% if home.credit.agent_phone %} <a href="tel:+1{{ home.credit.agent_phone | replace('-', '') }}">{{ home.credit.agent_phone }}</a>{% endif %}{% endif %}
+      {% if home.credit.agent and home.credit.office %} · {% endif %}
+      {% if home.credit.office %}<strong>{{ home.credit.office }}</strong>{% if home.credit.office_phone %} <a href="tel:+1{{ home.credit.office_phone | replace('-', '') }}">{{ home.credit.office_phone }}</a>{% endif %}{% endif %}
+    </span>
+    {% endif %}
+    {% if home.credit and home.credit.source %}<span>Source {{ home.credit.source }}</span>{% endif %}
+    {% if home.credit and home.credit.mls_id %}<span>MLS #{{ home.credit.mls_id }}</span>{% endif %}
+    {% if home.days_on_market is defined %}<span>{{ home.days_on_market }} {{ 'day' if home.days_on_market == 1 else 'days' }} on market</span>{% endif %}
+    {% if home.listing_updated %}<span>Listing updated by MLS <time datetime="{{ home.listing_updated }}">{{ home.listing_updated }}</time></span>{% endif %}
+    {% if home.details_checked %}<span>MLS details checked <time datetime="{{ home.details_checked }}">{{ home.details_checked[:10] }} at {{ home.details_checked[11:16] }} UTC</time></span>
+    {% elif home.updated %}<span>Inventory last checked <time datetime="{{ home.updated }}">{{ home.updated[:10] }}</time></span>{% endif %}
+  </p>
+{% endif %}

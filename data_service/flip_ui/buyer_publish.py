@@ -9,7 +9,7 @@ import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from buyer_analysis import comparable_sales, project_matches, scopes
+from buyer_analysis import comparable_sales, project_matches, purchase_recommendation, scopes
 from buyer_catalog import utcnow
 from buyer_listing_facts import checked_facts, listing_credit, public_text
 from buyer_media import approved_mls_photo_url, validated_jpeg
@@ -203,6 +203,19 @@ def project(manifest, row, asset_dir):
             if selected:
                 home['projects_expires'] = min(pair.pop('expires') for pair in selected)
                 home['projects'] = selected
+        if market == 'sale' and address_ok and {'valuation', 'sold_comps'} <= allow:
+            reviewed = row.get('reviewed_purchase_assessment')
+            recommendation = purchase_recommendation(home)
+            recommendation_expires = home.get('sales_expires', '')
+            if not recommendation and reviewed and 'ai' in allow:
+                recommendation = purchase_recommendation(home, reviewed)
+                try:
+                    recommendation_expires = min(expires, timestamp(row['purchase_assessment_refresh_by']))
+                except (KeyError, TypeError, ValueError):
+                    recommendation_expires = ''
+            if recommendation and recommendation_expires > utcnow():
+                home['recommendation'] = recommendation
+                home['recommendation_expires'] = recommendation_expires
     return (home, expires), assets
 
 

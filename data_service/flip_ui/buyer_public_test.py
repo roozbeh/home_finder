@@ -92,7 +92,7 @@ class BuyerJourneyTest(unittest.TestCase):
             source[field] = listing[field] = True
         publish(self.manifest, self.path, ASSETS)
         body = self.client.get(url).data
-        for value in (b'ML123456', b'2026-11-07', b'2026-11-22 at 17:15 UTC', b'27</strong> days on market',
+        for value in (b'ML123456', b'2026-11-07', b'2026-11-22 at 17:15 UTC', b'27 days on market',
                       b'Listing Specialist', b'Listing Brokerage', b'tel:+16505550100', b'tel:+16505550199'):
             self.assertIn(value, body)
         self.assertNotIn(PRIVATE.encode(), body)
@@ -128,6 +128,35 @@ class BuyerJourneyTest(unittest.TestCase):
         self.assertEqual(listing_baths({}, {'BATHROOMS_FULL': '1', 'BATHROOMS_HALF': '1'}), 1.5)
         self.assertIsNone(listing_baths({}, {'Baths': '--'}))
 
+    def test_live_assessment_import_requires_review_of_exact_revision(self):
+        from buyer_live_feed import manifest_for
+
+        now = datetime(2026, 11, 22, tzinfo=timezone.utc)
+        observed = now - timedelta(hours=1)
+        fields = ['internet', 'address', 'derived', 'valuation', 'sold_comps', 'ai']
+        config = {'feed': {'production_approved': True, 'listing_refresh_hours': 24,
+                           'internet_display_values': {'Full': fields}}}
+        row = {'SOURCE_MLS': 'feed', 'LISTING_ID': 'M1', 'RAW_STATUS': 'ACTV',
+               '_updated_at': observed, 'details_fetched': observed,
+               'details': {'INTERNET_DISPLAY': 'Full', 'INTERNET_SITES': 'Yes - All Sites'}}
+        assessment = {'created_at': observed, 'valuation_status': 'AI_estimate_requires_review',
+                      'resale_midpoint': 950_000, 'photo_urls': [PRIVATE]}
+        evidence = {'purchase_assessment_created_at': observed.isoformat(),
+                    'purchase_assessment_refresh_by': (now + timedelta(hours=2)).isoformat(),
+                    'allow': dict.fromkeys(fields, True)}
+        def resulting_row():
+            return manifest_for([row], config, b'test-key', reviewed={'feed:M1': evidence},
+                                saved_assessments={'M1': assessment}, now=now)['homes'][0]
+
+        carried = resulting_row()['reviewed_purchase_assessment']
+        self.assertEqual(carried['resale_midpoint'], 950_000)
+        self.assertNotIn('photo_urls', carried)
+        evidence['allow']['sold_comps'] = False
+        self.assertNotIn('reviewed_purchase_assessment', resulting_row())
+        evidence['allow']['sold_comps'] = True
+        assessment['created_at'] += timedelta(seconds=1)
+        self.assertNotIn('reviewed_purchase_assessment', resulting_row())
+
     def test_public_surfaces_and_filters(self):
         for path in ('/', '/homes', f'/homes/{FAIRFIELD}', f'/homes/{PENDING}', f'/homes/{SUPPRESSED}',
                      f'/homes/{LIMITED}', f'/homes/{FAIRFIELD}/contact'):
@@ -140,7 +169,7 @@ class BuyerJourneyTest(unittest.TestCase):
             self.assertIn('no-store', response.headers['Cache-Control'])
         self.assertIn(b'Renovation estimate unavailable', self.client.get('/homes').data)
         self.assertIn(b'Comparable sales', self.client.get(f'/homes/{FAIRFIELD}').data)
-        self.assertNotIn(b'Property photo', self.client.get(f'/homes/{LIMITED}').data)
+        self.assertNotIn(f'/homes/{LIMITED}/media/'.encode(), self.client.get(f'/homes/{LIMITED}').data)
         result = self.client.get('/homes?dom=60&reduced=1')
         self.assertIn(FAIRFIELD.encode(), result.data)
         self.assertNotIn(PENDING.encode(), result.data)
@@ -212,6 +241,7 @@ class BuyerJourneyTest(unittest.TestCase):
         self.assertEqual(card['price'], 460_000)
         self.assertEqual(card['locality'], 'Fairfield, CA 94533')
         self.assertEqual(card['facts']['beds'], 3)
+        self.assertEqual(card['facts']['days_on_market'], 65)
         self.assertIn('property_type=houses&page=2', card['url'])
         self.assertTrue(card['photo'].startswith(listing + '/media/'))
         self.assertEqual(self.client.get(card['photo']).status_code, 200)
@@ -223,10 +253,12 @@ class BuyerJourneyTest(unittest.TestCase):
 
         row['policy'] = deepcopy(row['policy'])
         row['policy']['allow']['sqft'] = False
+        row['policy']['allow']['days_on_market'] = False
         row['policy']['allow']['media'] = False
         publish(self.manifest, self.path, ASSETS)
         limited = self.client.get(f'{listing}/map-preview').json
         self.assertNotIn('sqft', limited['facts'])
+        self.assertNotIn('days_on_market', limited['facts'])
         self.assertIsNone(limited['photo'])
         self.assertEqual(self.client.get(card['photo']).status_code, 404)
         row['policy']['allow']['geolocation'] = False
@@ -239,6 +271,37 @@ class BuyerJourneyTest(unittest.TestCase):
         detail = self.client.get(listing)
         self.assertEqual(detail.status_code, 200)
         self.assertNotIn(b'94533', detail.data)
+
+    def test_flipfinder_filters_cover_map_counts_and_publication_freshness(self):
+        fairfield, pending, _, limited = self.manifest['homes']
+        fairfield['media'][0]['category'] = 'exterior'
+        for row, resale in ((pending, 1_300_000), (limited, 580_000)):
+            row.update(analysis_origin='model', purchase_assessment_refresh_by='2098-01-01T00:00:00+00:00',
+                       reviewed_purchase_assessment={'resale_low': resale - 10_000, 'resale_midpoint': resale,
+                                                     'resale_high': resale + 10_000, 'renovation_low': 35_000,
+                                                     'renovation_high': 55_000, 'hoa_monthly': 0})
+        publish(self.manifest, self.path, ASSETS)
+        cases = (
+            ('photo_categories=yes', {FAIRFIELD}, 1),
+            ('photo_categories=no&purchase_recommendation=yes', {PENDING, LIMITED}, 2),
+            ('purchase_recommendation=no', set(), 1),  # The hidden-address home has no map pin.
+            ('good_investment=yes', {PENDING}, 1),
+            ('good_investment=no', {LIMITED}, 1),
+        )
+        for query, ids, count in cases:
+            with self.subTest(query=query):
+                self.assertEqual(self.client.get('/homes/property-type-count?' + query).json, {'count': count})
+                points = self.client.get('/homes/map-data?' + query).json
+                self.assertEqual({point['url'].split('?')[0].rsplit('/', 1)[1] for point in points}, ids)
+                self.assertTrue(all(query in point['url'] for point in points))
+        self.assertIn(b'FlipFinder filters', self.client.get('/homes').data)
+        self.assertEqual(self.client.get('/homes?good_investment=unknown').status_code, 400)
+        self.assertIn(b'Recommended purchase price', self.client.get(f'/homes/{PENDING}').data)
+        with sqlite3.connect(self.path) as db:
+            db.execute("UPDATE homes SET payload=json_set(payload, '$.recommendation_expires', ?) WHERE id=?",
+                       ('2000-01-01T00:00:00+00:00', PENDING))
+        self.assertEqual(self.client.get('/homes/property-type-count?good_investment=yes').json, {'count': 0})
+        self.assertNotIn(b'Recommended purchase price', self.client.get(f'/homes/{PENDING}').data)
 
     def test_withdraw_after_warming_search_detail_media_and_form(self):
         path = f'/homes/{FAIRFIELD}'
@@ -344,6 +407,34 @@ class BuyerJourneyTest(unittest.TestCase):
         self.assertEqual(inbox.deliver(delivered.append), 2)
         self.assertEqual(inbox.deliver(delivered.append), 0)
         self.assertEqual({row['kind'] for row in delivered}, {'partner', 'request-tour'})
+
+    def test_public_detail_uses_proxy_thumbnails_inline_credit_and_buyer_actions(self):
+        home = self.manifest['homes'][0]
+        home['year_built'] = 1983
+        home['credit'] = {**home['credit'], 'mls_id': 'SAMPLE1983'}
+        home['media'] = [
+            {**photo, 'category': 'kitchen' if index else 'exterior'}
+            for index, photo in enumerate(home['media'])
+        ]
+        publish(self.manifest, self.path, ASSETS)
+        path = f'/homes/{FAIRFIELD}'
+        body = self.client.get(path).get_data(as_text=True)
+        self.assertIn('Built in 1983', body)
+        self.assertIn('class="property-credit"', body)
+        self.assertIn('MLS #SAMPLE1983', body)
+        self.assertNotIn('MLS listing record', body)
+        self.assertIn('View all 2 photos by category', body)
+        self.assertIn('class="property-thumbnail-strip"', body)
+        self.assertIn('id="property-photo-modal"', body)
+        self.assertIn(f'href="{path}/request-tour">Request a Tour</a>', body)
+        self.assertIn(f'href="{path}/contact">Contact Agent</a>', body)
+        self.assertNotIn('sanitized_file', body)
+        thumb_urls = set(re.findall(r'href="(' + re.escape(path) + r'/media/[0-9a-f]+)"', body))
+        self.assertEqual(len(thumb_urls), 2)
+        self.assertTrue(all(self.client.get(url).status_code == 200 for url in thumb_urls))
+        limited = self.client.get(f'/homes/{LIMITED}').get_data(as_text=True)
+        self.assertIn('Photo unavailable', limited)
+        self.assertNotIn('id="property-photo-modal"', limited)
 
 
 if __name__ == '__main__':

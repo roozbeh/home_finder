@@ -23,7 +23,7 @@ TOUR_FIELDS = ('preferred_time', 'alternative_time', 'window_minutes', 'represen
 PARTNER_FIELDS = ('name', 'license', 'brokerage', 'markets', 'experience', 'availability', 'channel', 'contact')
 SEARCH_FIELDS = ('city', 'market', 'min_price', 'max_price', 'beds', 'baths', 'property_type',
                  'min_sqft', 'min_lot', 'min_year', 'dom', 'reduced', 'auction', 'bank_owned',
-                 'photos_only', 'page')
+                 'photos_only', 'photo_categories', 'purchase_recommendation', 'good_investment', 'page')
 MARKET_LABELS = {'sale': 'For sale', 'rent': 'For rent', 'sold': 'Sold'}
 LEAD_ACTIONS = ('contacted', 'qualified conversation', 'tour requested', 'tour confirmed', 'tour held',
                 'representation agreement', 'offer', 'closing', 'closed', 'opted out')
@@ -78,6 +78,9 @@ def search_parameters(args):
         raise ValueError('Maximum price must be at least the minimum price.')
     for key in ('reduced', 'auction', 'bank_owned', 'photos_only'):
         filters[key] = filters[key] == '1'
+    for key in ('photo_categories', 'purchase_recommendation', 'good_investment'):
+        if filters[key] not in ('', 'yes', 'no'):
+            raise ValueError('Choose Any, Yes or No for each FlipFinder filter.')
     filters['page'] = max(1, filters['page'] or 1)
     return filters
 
@@ -235,7 +238,8 @@ def register_public(app, admin_required, validate_csrf):
         return jsonify(label=home['location'], locality=home.get('locality'), price=home['price'],
                        market=home.get('market', 'sale'), photo=photo, fictional=home.get('preview', False),
                        url=listing_url(home_id, filter_query(filters, include_page=True)),
-                       facts={key: home[key] for key in ('beds', 'baths', 'sqft', 'property_type') if key in home})
+                       facts={key: home[key] for key in ('beds', 'baths', 'sqft', 'property_type', 'days_on_market')
+                              if key in home})
 
     @bp.get('/homes/<home_id>')
     def detail(home_id):
@@ -248,7 +252,7 @@ def register_public(app, admin_required, validate_csrf):
         entry = request.args.get('from_view', '')
         track(home_id, 'view', entry if entry in {'search', 'homepage'} else 'detail')
         return render_template('buyer_detail.html', home=home, back_url=url_for('buyer.homes', **query),
-                               analysis=detail_analysis(home, request.args))
+                               analysis=detail_analysis(home, request.args), recommendation=home.get('recommendation'))
 
     @bp.get('/homes/<home_id>/media/<media_id>')
     def media(home_id, media_id):

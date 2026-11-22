@@ -1,0 +1,31 @@
+{% from 'buyer_components.html' import money %}
+<section class="property-recommendation" aria-labelledby="recommendation-title">
+  <h2 id="recommendation-title">Recommended purchase price</h2>
+  <p class="recommendation-caption">Estimated break-even price</p>
+  <p class="recommendation-amount">{{ money(recommendation.offer) }}</p>
+  {% if recommendation.low is number and recommendation.high is number and recommendation.low != recommendation.high %}
+  <p class="recommendation-range">{{ money(recommendation.low) }}–{{ money(recommendation.high) }} modeled range</p>
+  {% endif %}
+  {% if recommendation.basis %}<p class="recommendation-caption">{{ recommendation.basis }}</p>{% endif %}
+  {% if recommendation.result is number %}
+  <p class="recommendation-result">
+    Estimated {{ 'loss' if recommendation.result < 0 else ('gain' if recommendation.result > 0 else 'result') }} at asking
+    <strong{% if recommendation.result < 0 %} class="recommendation-loss"{% endif %}>{{ '−' if recommendation.result < 0 }}{{ money(recommendation.result|abs) }}</strong>
+  </p>
+  {% endif %}
+  {% if recommendation.hold_months or recommendation.incomplete %}
+  <p class="recommendation-caption">{% if recommendation.hold_months %}{{ recommendation.hold_months }}-month hold.{% endif %}{% if recommendation.incomplete %} Unpriced costs could change the result.{% endif %}</p>
+  {% endif %}
+  {% if analysis.scenario %}
+  <a class="text-action" href="#purchase-scenario">View purchase scenario</a>
+  {% elif recommendation.ledger %}
+  <details class="recommendation-ledger">
+    <summary>View cost ledger</summary>
+    <dl>
+      {% for line in recommendation.ledger %}
+      <dt>{{ line.label }}</dt><dd>{% if line.amount is number %}{{ '−' if line.amount < 0 }}{{ money(line.amount|abs) }}{% else %}Unknown{% endif %}</dd>
+      {% endfor %}
+    </dl>
+  </details>
+  {% endif %}
+</section>

@@ -14,6 +14,7 @@ from pathlib import Path
 from pymongo import MongoClient
 
 from mls_geography import BAY_COUNTIES
+from buyer_analysis import ASSESSMENT_NUMBERS
 from buyer_listing_facts import FACT_KEYS, public_facts, public_text
 from buyer_media import approved_mls_gallery
 from buyer_photo_labels import CATEGORIES, apply_bulk_categories, gallery_category
@@ -114,13 +115,15 @@ def listing_contact(details):
     return {**names, 'agent_phone': details.get('REPORT_LIST_AGENT_PHONE'), 'office_phone': details.get('LOPHONENO')}
 
 
-def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, bulk_classifications=None, now=None):
+def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, bulk_classifications=None,
+                 saved_assessments=None, now=None):
     now = now or datetime.now(timezone.utc)
     source_rules = {name: config for name, config in rules.items()
                     if config.get('production_approved') is True}
     manifest = {'mode': 'approved', 'sources': source_rules, 'homes': []}
     reviewed = reviewed or {}
     photo_labels = photo_labels or {}
+    saved_assessments = saved_assessments or {}
     uncategorized = []
     for doc in listings:
         source = doc.get('SOURCE_MLS')
@@ -216,6 +219,16 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
                     'cost_items', 'cost_version', 'cost_dependency_free', 'partial_budget', 'analysis_date'):
             if key in evidence:
                 row[key] = evidence[key]
+        approval_time = read_stamp(evidence.get('purchase_assessment_created_at'))
+        assessment = saved_assessments.get(listing_id)
+        if (market == 'sale' and approval_time is not None and approval_time <= now and assessment
+                and read_stamp(assessment.get('created_at')) == approval_time
+                and assessment.get('valuation_status') == 'AI_estimate_requires_review'
+                and evidence.get('purchase_assessment_refresh_by')
+                and all(permissions.get(field) for field in ('derived', 'valuation', 'sold_comps', 'ai', 'address'))):
+            row.setdefault('analysis_origin', 'model')
+            row['reviewed_purchase_assessment'] = {key: assessment.get(key) for key in ASSESSMENT_NUMBERS}
+            row['purchase_assessment_refresh_by'] = evidence['purchase_assessment_refresh_by']
         if (bulk_classifications is not None and '_id' in doc and 'media' not in evidence
                 and row.get('media')):
             uncategorized.extend((doc['_id'], asset) for asset in row['media'] if not asset['category'])
@@ -276,8 +289,17 @@ def refresh(args):
                 destination.setdefault(record['listing_id'], {})[record['photo_url']] = record['category']
             for listing_id, gallery in reviewed_labels.items():
                 labels.setdefault(listing_id, {}).update(gallery)
-            manifest = manifest_for(records, config['sources'], key, reviewed=config.get('reviewed_listings'),
-                                    photo_labels=labels, bulk_classifications=photo_db.mls_photo_classifications)
+            reviewed = config.get('reviewed_listings') or {}
+            approved_ids = {stable_key.split(':', 1)[1] for stable_key, evidence in reviewed.items()
+                            if ':' in stable_key and evidence.get('purchase_assessment_created_at')}
+            assessments = {}
+            if approved_ids:
+                assessments = {assessment['listing_id']: assessment for assessment in
+                               photo_db.active_renovation_insights.find(
+                                   {'listing_id': {'$in': sorted(approved_ids)}},
+                                   {field: 1 for field in ('listing_id', 'created_at', 'valuation_status', *ASSESSMENT_NUMBERS)})}
+            manifest = manifest_for(records, config['sources'], key, reviewed=reviewed, photo_labels=labels,
+                                    bulk_classifications=photo_db.mls_photo_classifications, saved_assessments=assessments)
     else:
         manifest = manifest_for((), {}, key)
     if not args.dry_run:

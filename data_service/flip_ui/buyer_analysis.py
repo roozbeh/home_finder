@@ -363,3 +363,46 @@ def detail_analysis(home, args):
             target = 25_000
         result['scenario'] = purchase_scenario(home['price'], home['resale'], budget['low'], budget['high'], target)
     return result
+
+
+ASSESSMENT_NUMBERS = ('resale_low', 'resale_midpoint', 'resale_high', 'renovation_low',
+                      'renovation_high', 'hoa_monthly')
+
+
+def purchase_recommendation(home, reviewed_assessment=None):
+    """Summarize the published default scope or a specifically reviewed saved assessment."""
+    if reviewed_assessment:
+        try:
+            inputs = [decimal(reviewed_assessment[key]) for key in ASSESSMENT_NUMBERS]
+        except (KeyError, ValueError):
+            return None
+        resale_low, resale, resale_high, work_low, work_high, hoa = inputs
+        if not (0 < resale_low <= resale <= resale_high and 0 <= work_low <= work_high and hoa >= 0):
+            return None
+        assumptions = {'extras': {'HOA': hoa * 10}}
+        eligible_for_scoring = True
+        basis = 'Reviewed renovation and resale estimate'
+    else:
+        scope = home.get('scopes')
+        if not scope or not home.get('resale'):
+            return None
+        budget = next((item for item in scope['budgets'] if item['choices'] == scope['default']), None)
+        if not budget or budget['low'] is None:
+            return None
+        resale_low = resale = resale_high = home['resale']
+        work_low, work_high = budget['low'], budget['high']
+        assumptions = {}
+        eligible_for_scoring = not scope['partial']
+        basis = 'Default renovation scope' if eligible_for_scoring else 'Default partial renovation scope'
+
+    asking = home['price']
+    scenario = purchase_scenario(asking, resale, work_low, work_high, assumptions=assumptions)
+    offer = scenario['break_even']
+    if offer <= 0:
+        return None
+    low = purchase_scenario(asking, resale_low, work_high, work_high, assumptions=assumptions)['break_even']
+    high = purchase_scenario(asking, resale_high, work_low, work_low, assumptions=assumptions)['break_even']
+    return {'offer': offer, 'low': max(0, low), 'high': high, 'result': scenario['result'],
+            'ledger': scenario['ledger'], 'resale': scenario['resale'], 'renovation': scenario['renovation'],
+            'hold_months': 10, 'incomplete': scenario['incomplete'], 'basis': basis,
+            'profitable': scenario['result'] > 0 if eligible_for_scoring else None}
