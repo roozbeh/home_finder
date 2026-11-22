@@ -1,6 +1,7 @@
 # Buyer catalog publisher
 
 The publisher runs in the Home Finder checkout and writes a private SQLite catalog from MongoDB. It runs once at startup and repeats after each configured interval. Docker restarts it after a process or Docker service restart unless an operator stopped it. It has no incoming web port.
+The publisher uses the existing MongoDB worker’s seccomp compatibility setting for Docker 18.09. It runs unprivileged with a read-only root filesystem.
 
 ## Server setup
 

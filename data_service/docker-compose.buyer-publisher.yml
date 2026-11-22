@@ -22,6 +22,8 @@ services:
     cap_drop:
       - ALL
     security_opt:
+      # Match mls_app on Docker 18.09, whose default profile blocks PyMongo threads.
+      - seccomp=unconfined
       - no-new-privileges:true
     logging:
       options:
