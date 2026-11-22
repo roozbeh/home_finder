@@ -1,0 +1,8 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+ENV PIP_PROGRESS_BAR=off
+RUN pip install --no-cache-dir "pymongo[srv]==4.7.2"
+
+COPY buyer_live_feed.py buyer_publish.py buyer_catalog.py buyer_listing_facts.py buyer_media.py buyer_photo_labels.py buyer_analysis.py mls_geography.py ./
+ENTRYPOINT ["python", "-u", "-B", "buyer_live_feed.py"]

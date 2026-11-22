@@ -4,7 +4,8 @@ import re
 from collections import defaultdict
 from flask import Blueprint, render_template, request, abort
 
-BAY_COUNTIES = ['Alameda', 'Contra Costa', 'Marin', 'Napa', 'San Francisco', 'San Mateo', 'Santa Clara', 'Solano', 'Sonoma']
+from mls_geography import BAY_COUNTIES
+
 CANDIDATES = {'SF426123960':1417626,'ML82065431':1450312,'41149750':1476152,'BA326084425':794430,'CRIV26238559':1085427,'CRSN26222098':1096760,'41149039':1278476,'ML82066483':1234969,'41152317':1133491,'BA326091746':524948}
 
 def renovation_bullets(assessment):
