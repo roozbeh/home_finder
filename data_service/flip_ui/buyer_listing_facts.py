@@ -83,6 +83,28 @@ def public_text(value, *, maxlength=320):
     return None
 
 
+def listing_phone(value):
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r'(?:\+?1[ .-]?)?(?:\(([2-9]\d{2})\)|([2-9]\d{2}))[ .-]*(\d{3})[ .-]*(\d{4})',
+                         value.strip(), re.ASCII)
+    if match:
+        wrapped_area, area, prefix, number = match.groups()
+        return f'{wrapped_area or area}-{prefix}-{number}'
+    return None
+
+
+def listing_credit(value):
+    """Publish only the named listing parties and their matching report phones."""
+    result = {}
+    for party in ('agent', 'office'):
+        if name := public_text(value.get(party), maxlength=120):
+            result[party] = name
+            if phone := listing_phone(value.get(f'{party}_phone')):
+                result[f'{party}_phone'] = phone
+    return result
+
+
 def public_facts(document, details):
     result = {}
     for group, labels in GROUPS.items():

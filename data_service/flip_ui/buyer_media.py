@@ -8,7 +8,7 @@ MLS_PHOTO_HOSTS = frozenset({
     'bridgemls-assets.cdn-connectmls.com', 'media.crmls.org',
 })
 MLS_LISTINGS_PHOTO = re.compile(r'/property/MLSL/[0-9]{8}/[0-9a-fA-F]{32}/[0-9]{1,4}/[0-9]{1,3}')
-CRMLS_PHOTO = re.compile(r'/medias/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.jpg', re.I)
+CRMLS_PHOTO = re.compile(r'/media[sz]/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.jpg', re.I)
 NEXT_MARKER = re.compile(rb'\xff[\x01-\xcf\xd8-\xff]')
 
 

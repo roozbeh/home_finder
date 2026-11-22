@@ -51,16 +51,25 @@
         <a class="buyer-button secondary" href="{{ tour }}">Request a tour</a></div>
     </aside>{% endif %}
   </div>
-  {% if home.credit or home.updated or home.listing_updated or home.details_checked %}
+  {% if home.credit or home.updated or home.listing_updated or home.details_checked or home.days_on_market is defined %}
   <section class="property-section property-listing-record" aria-labelledby="listing-record-title">
     <h2 id="listing-record-title">MLS listing record</h2>
-    <dl>
-      {% if home.credit and home.credit.source %}<div><dt>MLS source</dt><dd>{{ home.credit.source }}</dd></div>{% endif %}
-      {% if home.credit and home.credit.mls_id %}<div><dt>MLS number</dt><dd>{{ home.credit.mls_id }}</dd></div>{% endif %}
-      {% if home.listing_updated %}<div><dt>Listing updated by MLS</dt><dd><time datetime="{{ home.listing_updated }}">{{ home.listing_updated }}</time></dd></div>{% endif %}
-      {% if home.details_checked %}<div><dt>MLS details checked</dt><dd><time datetime="{{ home.details_checked }}">{{ home.details_checked[:10] }} at {{ home.details_checked[11:16] }} UTC</time></dd></div>{% endif %}
-      {% if home.updated and not home.details_checked %}<div><dt>Inventory last checked</dt><dd><time datetime="{{ home.updated }}">{{ home.updated[:10] }}</time></dd></div>{% endif %}
-    </dl>
+    {% if home.days_on_market is defined %}
+    <p class="property-market-days"><strong>{{ home.days_on_market }}</strong> {{ 'day' if home.days_on_market == 1 else 'days' }} on market</p>
+    {% endif %}
+    {% if home.credit and (home.credit.agent or home.credit.office) %}
+    <p>Listed by
+      {% if home.credit.agent %}<strong>{{ home.credit.agent }}</strong>{% if home.credit.agent_phone %} <a href="tel:+1{{ home.credit.agent_phone | replace('-', '') }}">{{ home.credit.agent_phone }}</a>{% endif %}{% endif %}
+      {% if home.credit.agent and home.credit.office %} · {% endif %}
+      {% if home.credit.office %}<strong>{{ home.credit.office }}</strong>{% if home.credit.office_phone %} <a href="tel:+1{{ home.credit.office_phone | replace('-', '') }}">{{ home.credit.office_phone }}</a>{% endif %}{% endif %}
+    </p>
+    {% endif %}
+    {% if home.credit and (home.credit.source or home.credit.mls_id) %}
+    <p>{% if home.credit.source %}Source {{ home.credit.source }}{% endif %}{% if home.credit.source and home.credit.mls_id %} · {% endif %}{% if home.credit.mls_id %}MLS #{{ home.credit.mls_id }}{% endif %}</p>
+    {% endif %}
+    {% if home.listing_updated %}<p class="property-listing-timestamp">Listing updated by MLS <time datetime="{{ home.listing_updated }}">{{ home.listing_updated }}</time></p>{% endif %}
+    {% if home.details_checked %}<p class="property-listing-timestamp">MLS details checked <time datetime="{{ home.details_checked }}">{{ home.details_checked[:10] }} at {{ home.details_checked[11:16] }} UTC</time></p>
+    {% elif home.updated %}<p class="property-listing-timestamp">Inventory last checked <time datetime="{{ home.updated }}">{{ home.updated[:10] }}</time></p>{% endif %}
   </section>
   {% endif %}
   {% if home.photos|length > 1 %}

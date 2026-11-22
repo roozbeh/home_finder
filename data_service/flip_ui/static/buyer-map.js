@@ -59,6 +59,7 @@
       element('strong', 'buyer-map-preview-price', price),
       element('h3', '', home.label),
     );
+    if (home.locality) copy.append(element('p', 'buyer-map-preview-locality', home.locality));
     const { beds, baths, sqft, property_type: type } = home.facts;
     const facts = [
       Number.isFinite(beds) && `${beds} ${beds === 1 ? 'bed' : 'beds'}`,

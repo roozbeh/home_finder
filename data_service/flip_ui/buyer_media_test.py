@@ -35,10 +35,12 @@ class BuyerMediaTest(unittest.TestCase):
     def test_crmls_public_preset_and_gallery_size_variants(self):
         preset = CRMLS_IMAGE + '?preset=X-Large'
         self.assertEqual(approved_mls_photo_url(preset), preset)
+        mediaz = preset.replace('/medias/', '/mediaz/')
+        self.assertEqual(approved_mls_photo_url(mediaz), mediaz)
         for url in (
             preset + '&token=provider-private', preset.replace('X-Large', 'Other'),
             preset.replace('media.crmls.org', 'sfarmedia.rapmls.com'),
-            preset.replace('/medias/', '/other/'),
+            preset.replace('/medias/', '/other/'), mediaz.replace('00112233', 'inval1d'),
         ):
             with self.subTest(url=url):
                 self.assertIsNone(approved_mls_photo_url(url))

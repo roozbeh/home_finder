@@ -14,7 +14,7 @@ from fetch_details import (MONGO_URI,MONGO_DB,FLIPDB_DATABASE,DETAILS_URL_TPL,
 
 def valid_url(url):
     return isinstance(url,str) and url.startswith('https://') and bool(re.search(
-        r'/HD_[^?]+\.jpe?g|/bigphoto/[^?]+\.jpe?g|media\.mlslmedia\.com/property/|media\.crmls\.org/medias/[0-9a-f-]{36}\.jpe?g',url,re.I))
+        r'/HD_[^?]+\.jpe?g|/bigphoto/[^?]+\.jpe?g|media\.mlslmedia\.com/property/|media\.crmls\.org/media[sz]/[0-9a-f-]{36}\.jpe?g',url,re.I))
 
 
 def expected_count(doc):

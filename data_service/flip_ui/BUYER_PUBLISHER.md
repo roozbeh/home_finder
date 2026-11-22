@@ -45,7 +45,7 @@ To stop publication, use the same Compose settings and `stop buyer-publisher`. T
 
 ## MLS listing record
 
-Source and listing credit permissions control the attribution. The MLS number also requires a publishable address because external lookups can reveal the street address. With source and listing freshness permissions, the listing record shows the ConnectMLS modification date and the UTC time Flip Finder checked the listing details. Older catalogs can show the inventory check date until republished.
+Source and listing credit permissions control the attribution. The MLS number and the listed-by line also require a publishable address because external lookups can reveal it. The listed-by line uses only the listing agent and brokerage business-card names and their designated listing-report phones. Enable the existing `days_on_market` grant at both levels only for sources and listing display modes cleared to publish it. With source and listing freshness permissions, the listing record shows the ConnectMLS modification date and the UTC time Flip Finder checked the listing details. Older catalogs can show the inventory check date until republished.
 
 ## Listing photos
 

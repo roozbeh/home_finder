@@ -82,20 +82,28 @@ class BuyerJourneyTest(unittest.TestCase):
         home = self.manifest['homes'][0]
         source = self.manifest['sources']['fixture']['allow']
         listing = home['policy']['allow']
-        home['credit'] = {'source': 'MLS credit', 'mls_id': 'ML123456', 'agent_email': PRIVATE}
+        home['credit'] = {'source': 'MLS credit', 'mls_id': 'ML123456', 'agent': '<b>Listing Specialist</b>',
+                          'agent_phone': '(650) 555-0100', 'office': 'Listing Brokerage',
+                          'office_phone': '650.555.0199', 'agent_email': PRIVATE}
+        home['days_on_market'] = 27
         home['listing_updated'] = '2026-11-07'
         home['details_checked'] = '2026-11-22T09:15:54-08:00'
-        for field in ('credits', 'updated'):
+        for field in ('credits', 'updated', 'days_on_market'):
             source[field] = listing[field] = True
         publish(self.manifest, self.path, ASSETS)
         body = self.client.get(url).data
-        for value in (b'ML123456', b'2026-11-07', b'2026-11-22 at 17:15 UTC'):
+        for value in (b'ML123456', b'2026-11-07', b'2026-11-22 at 17:15 UTC', b'27</strong> days on market',
+                      b'Listing Specialist', b'Listing Brokerage', b'tel:+16505550100', b'tel:+16505550199'):
             self.assertIn(value, body)
         self.assertNotIn(PRIVATE.encode(), body)
 
         for permissions, field, hidden, visible in (
             (listing, 'address', b'ML123456', b'MLS credit'),
+            (listing, 'address', b'Listing Specialist', b'MLS credit'),
             (source, 'credits', b'ML123456', b'Listing updated by MLS'),
+            (source, 'credits', b'tel:+16505550100', b'Listing updated by MLS'),
+            (source, 'days_on_market', b'days on market', b'Listed by'),
+            (listing, 'days_on_market', b'days on market', b'Listed by'),
             (listing, 'updated', b'2026-11-07', b'ML123456'),
         ):
             with self.subTest(field=field):
@@ -191,6 +199,9 @@ class BuyerJourneyTest(unittest.TestCase):
 
     def test_map_preview_uses_permitted_facts_media_and_rechecks_filters(self):
         listing = f'/homes/{FAIRFIELD}'
+        row = self.manifest['homes'][0]
+        row['locality'] = 'Fairfield, CA 94533'
+        publish(self.manifest, self.path, ASSETS)
         bulk = self.client.get('/homes/map-data?city=Fairfield').json
         self.assertEqual(len(bulk), 1)
         self.assertEqual(set(bulk[0]), {'point', 'label', 'price', 'url'})
@@ -199,6 +210,7 @@ class BuyerJourneyTest(unittest.TestCase):
         self.assertIn('no-store', response.headers['Cache-Control'])
         card = response.json
         self.assertEqual(card['price'], 460_000)
+        self.assertEqual(card['locality'], 'Fairfield, CA 94533')
         self.assertEqual(card['facts']['beds'], 3)
         self.assertIn('property_type=houses&page=2', card['url'])
         self.assertTrue(card['photo'].startswith(listing + '/media/'))
@@ -209,7 +221,6 @@ class BuyerJourneyTest(unittest.TestCase):
         self.assertEqual(self.client.get(f'/homes/{SUPPRESSED}/map-preview').status_code, 404)
         self.assertIsNone(self.client.get(f'/homes/{LIMITED}/map-preview').json['photo'])
 
-        row = self.manifest['homes'][0]
         row['policy'] = deepcopy(row['policy'])
         row['policy']['allow']['sqft'] = False
         row['policy']['allow']['media'] = False
@@ -221,7 +232,13 @@ class BuyerJourneyTest(unittest.TestCase):
         row['policy']['allow']['geolocation'] = False
         publish(self.manifest, self.path, ASSETS)
         self.assertEqual(self.client.get(f'{listing}/map-preview').status_code, 404)
-        self.assertEqual(self.client.get(listing).status_code, 200)
+        row['policy']['allow']['geolocation'] = True
+        row['policy']['allow']['address'] = False
+        publish(self.manifest, self.path, ASSETS)
+        self.assertEqual(self.client.get(f'{listing}/map-preview').status_code, 404)
+        detail = self.client.get(listing)
+        self.assertEqual(detail.status_code, 200)
+        self.assertNotIn(b'94533', detail.data)
 
     def test_withdraw_after_warming_search_detail_media_and_form(self):
         path = f'/homes/{FAIRFIELD}'

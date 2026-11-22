@@ -11,7 +11,7 @@ from pathlib import Path
 
 from buyer_analysis import comparable_sales, project_matches, scopes
 from buyer_catalog import utcnow
-from buyer_listing_facts import checked_facts, public_text
+from buyer_listing_facts import checked_facts, listing_credit, public_text
 from buyer_media import approved_mls_photo_url, validated_jpeg
 from buyer_photo_labels import CATEGORIES
 from buyer_property_types import property_type_group, property_type_label
@@ -133,10 +133,12 @@ def project(manifest, row, asset_dir):
     if 'credits' in allow:
         credit = row.get('credit', {})
         home['credit'] = {'source': str(credit.get('source', ''))}
-        listing_id = credit.get('mls_id')
-        # A listing number can reveal a withheld address through another service.
-        if address_ok and isinstance(listing_id, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,31}', listing_id):
-            home['credit']['mls_id'] = listing_id
+        # Attribution can reveal a withheld address through another service.
+        if address_ok:
+            listing_id = credit.get('mls_id')
+            if isinstance(listing_id, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,31}', listing_id):
+                home['credit']['mls_id'] = listing_id
+            home['credit'].update(listing_credit(credit))
     if 'updated' in allow:
         try:
             checked = datetime.fromisoformat(row['details_checked'])
@@ -149,7 +151,9 @@ def project(manifest, row, asset_dir):
             home['listing_updated'] = date.fromisoformat(row['listing_updated']).isoformat()
         except (KeyError, TypeError, ValueError):
             pass
-    for key in ('days_on_market', 'auction', 'bank_owned'):
+    if 'days_on_market' in allow and type(row.get('days_on_market')) is int and row['days_on_market'] >= 0:
+        home['days_on_market'] = row['days_on_market']
+    for key in ('auction', 'bank_owned'):
         if key in allow and key in row:
             home[key] = row[key]
     if 'original_price' in allow and type(row.get('original_price')) is int:

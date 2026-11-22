@@ -232,7 +232,7 @@ def register_public(app, admin_required, validate_csrf):
         if home is None:
             abort(404)
         photo = url_for('buyer.media', home_id=home_id, media_id=home['photos'][0]) if home['photos'] else None
-        return jsonify(label=home['location'], price=home['price'],
+        return jsonify(label=home['location'], locality=home.get('locality'), price=home['price'],
                        market=home.get('market', 'sale'), photo=photo, fictional=home.get('preview', False),
                        url=listing_url(home_id, filter_query(filters, include_page=True)),
                        facts={key: home[key] for key in ('beds', 'baths', 'sqft', 'property_type') if key in home})

@@ -117,6 +117,7 @@ body:has(.buyer) .nav a:focus-visible { outline:3px solid #1d8467; outline-offse
 .buyer-map-preview-price { display:block; color:var(--buyer-ink); font-size:1.3rem; letter-spacing:-.025em; }
 .buyer-map-preview h3 { margin:3px 0 0; color:var(--buyer-ink); font-size:.94rem; overflow-wrap:anywhere; }
 .buyer-map-preview p { color:var(--buyer-muted); font-size:.875rem; }
+.buyer-property-popup .leaflet-popup-content .buyer-map-preview-locality { margin:2px 0 6px; overflow-wrap:anywhere; }
 .buyer-property-popup .buyer-map-preview-link {
   display:inline-flex;
   align-items:center;

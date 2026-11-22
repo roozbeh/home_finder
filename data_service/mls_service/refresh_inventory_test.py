@@ -28,6 +28,11 @@ class SearchTest(unittest.TestCase):
         self.assertEqual(photos, [f'{base}/2/1', f'{base}/2/2'])
         self.assertEqual(select_gallery([], photos, {'photocount': 2}), (photos, 'complete'))
 
+        crmls = 'https://media.crmls.org/mediaz/00112233-4455-6677-8899-aabbccddeeff.jpg?preset=X-Large'
+        response.text = f'<img src="{crmls}">'
+        self.assertEqual(fetch_gallery_photos(session, 'example'), [crmls])
+        self.assertEqual(select_gallery([], [crmls], {'photocount': 1}), ([crmls], 'complete'))
+
     def test_capped_or_malformed_city_does_not_count_as_complete(self):
         observed, complete = {}, set()
         with patch.object(search, "ROW_CAP_THRESHOLD", 2), patch.object(search, "fetch_listings", side_effect=[

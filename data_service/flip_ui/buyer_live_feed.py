@@ -32,7 +32,9 @@ PROJECTION = {key: 1 for key in (
     *MAPPED.values(), *FACT_KEYS, 'CLOSE_DATE', 'CLOSE_PRICE', 'photos',
     'SALE_OR_RENT', 'details.SALE_OR_RENT', 'details.CLOSE_DATE', 'details.CLOSE_PRICE',
     'details.INTERNET_DISPLAY', 'details.INTERNET_SITES', 'details.PRIMARY_PHOTO_URI',
-    'details.PUBLIC_REMARKS', 'details.Baths', 'details.MODIFICATION_TIMESTAMP',
+    'details.PUBLIC_REMARKS', 'details.Baths', 'details.MODIFICATION_TIMESTAMP', 'details.DAYS_ON_MARKET',
+    'details.LANAMEBIZCARD.html', 'details.LIST_OFFICE_BCARD.html',
+    'details.REPORT_LIST_AGENT_PHONE', 'details.LOPHONENO',
     'PROPERTY_SUB_TYPE', 'details.PROPERTY_SUB_TYPE',
     'details.PROPERTY_TYPE', *(f'details.{key}' for key in FACT_KEYS),
 )}
@@ -101,6 +103,15 @@ def listing_baths(doc, details):
             return float(value)
     full = full if full is not None else integer_amount(doc.get('BATHROOMS_FULL'))
     return full + (half or 0) / 2 if full is not None else None
+
+
+def listing_contact(details):
+    names = {}
+    for party, key in (('agent', 'LANAMEBIZCARD'), ('office', 'LIST_OFFICE_BCARD')):
+        card = details.get(key)
+        if isinstance(card, dict):
+            names[party] = card.get('html')
+    return {**names, 'agent_phone': details.get('REPORT_LIST_AGENT_PHONE'), 'office_phone': details.get('LOPHONENO')}
 
 
 def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, bulk_classifications=None, now=None):
@@ -172,6 +183,10 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
         for key, field in MAPPED.items():
             if field in doc:
                 row[key] = doc[field]
+        if permissions.get('credits') and permissions.get('address'):
+            row['credit'].update(listing_contact(details))
+        days = integer_amount(row.get('days_on_market'))
+        row['days_on_market'] = days if days is not None else integer_amount(details.get('DAYS_ON_MARKET'))
         row['property_type'] = listing_property_type(doc, details)
         for name in ('beds', 'sqft', 'lot_sqft', 'year_built'):
             row[name] = integer_amount(row.get(name, details.get(MAPPED[name])))

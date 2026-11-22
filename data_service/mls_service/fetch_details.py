@@ -80,7 +80,7 @@ def supplied_primary_photo(details: dict) -> list[str]:
 
 def is_gallery_reference(url):
     return isinstance(url, str) and url.startswith('https://') and bool(re.search(
-        r'/HD_[^?]+\.jpe?g|/bigphoto/[^?]+\.jpe?g|media\.mlslmedia\.com/property/|media\.crmls\.org/medias/[0-9a-f-]{36}\.jpe?g', url, re.I))
+        r'/HD_[^?]+\.jpe?g|/bigphoto/[^?]+\.jpe?g|media\.mlslmedia\.com/property/|media\.crmls\.org/media[sz]/[0-9a-f-]{36}\.jpe?g', url, re.I))
 
 
 def select_gallery(existing, recovered, detail):
@@ -123,7 +123,7 @@ def fetch_gallery_photos(session: requests.Session, dcid: str) -> list[str]:
         page,
         re.IGNORECASE,
     )
-    candidates += re.findall(r'https://media\.crmls\.org/medias/[0-9a-f-]{36}\.jpe?g(?:\?[^"\'\s<>]*)?', page, re.IGNORECASE)
+    candidates += re.findall(r'https://media\.crmls\.org/media[sz]/[0-9a-f-]{36}\.jpe?g(?:\?[^"\'\s<>]*)?', page, re.IGNORECASE)
     candidates += re.findall(r'https://media\.mlslmedia\.com/property/[^"\'\s<>\\]+', page, re.IGNORECASE)
     normalized = [urljoin(PHOTO_DETAIL_URL, url) for url in candidates]
     # Deduplicate sizing variants by identity, retaining an actual supplied URL.
@@ -135,7 +135,7 @@ def fetch_gallery_photos(session: requests.Session, dcid: str) -> list[str]:
             identity = f'{prefix}/{photo_number}'
             preferred_size = size == '2'
         else:
-            identity = url.split('?')[0] if 'media.crmls.org/medias/' in url else url
+            identity = url.split('?')[0] if re.match(r'https://media\.crmls\.org/media[sz]/', url) else url
             preferred_size = False
         previous = photos.get(identity)
         if previous is None or (preferred_size and not previous[1]):
