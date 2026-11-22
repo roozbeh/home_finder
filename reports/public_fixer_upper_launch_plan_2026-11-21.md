@@ -1,3 +1,56 @@
+# Original Request
+I had an interview with Aida on Thursday. She provided some feedback (Nov 19, 2026 Aida
+Cost of transaction
+Marketing
+Photography
+Notary
+Attorney fees
+Notes
+Renovation cost for AI is not accurate
+Bathroom renovation would be $25K to $40K, the cost numbers has to be verified
+Where is the source of these numbers for AI
+How to use the training data
+We can use for COMP -> CMA
+With distance, historically these flips has done
+If the historical cost is more accurate
+Website -> InvestorLyft
+From off-market properties
+For on-market properties -> check redfit, and check 45-60 days, auction, bank owned
+Title Agency -> Check brokerage
+Lead information would be captured from Title agency information
+There are platforms for lead generation
+Source -> wholesalers
+Property for trust
+Property
+Bigger Pockets ->
+Investor friendly accountant, lawyer
+Promote our agency
+Most investors would not hire agents
+Most flippers would not hire agents
+Followups
+How the agent knows about when the off-market property will be open
+Research “Bigger Pockets”
+Websites suggested by Aida
+https://www.biggerpockets.com/
+https://7minuteshousedeals.com/
+391 Ponderosa Road,
+South San Francisco, California, 94080
+
+
+in in the 7 minutes:
+https://7minuteshousedeals.com/market/sf/south-san-francisco-single-family-3bd-79j5ic
+
+
+but it is not in the zillow:
+https://www.zillow.com/homedetails/391-Ponderosa-Rd-South-San-Francisco-CA-94080/15486840_zpid/
+https://investorlift.com/
+). The guts of it was the investors would not pay for subscription, since there are so many competeing products. The free model promoting the agent may work, but perhaps for end buyers not professional investors, since pros would have their own army of agents. She also suggested some other data sources like https://7minuteshousedeals.com/ which offer off-market properties. In this session, I just want to do analysis and planning, so the output should be a plan, because you are an expensive model, when you have the plan, I will ask a cheaper model to execute the model (like Terra). Now, here are my ideas:
+1. Can we revamp the website to provide the analysis data to public? I am thinking to make https://flips.roozbeh.realtor/admin/active available to public, but that would require to make sure the hidden MLS fields like "private remarks" to not be available to public. We need to review the regulations and make sure we would not get in to trouble.
+2. We would need to make sure all of the active properties in the market are analyzerd. That would require all of the pictures are being categorized, and the cost of renovation is being calculated for each one of them. I was wondering if you could do a cost analysis how much this would cost a. for the initial, b. for the ongoing work, and form how much I would need to invest per month. It's a business so it would require some upfront investment, but I want to see how much we're talking about. Please form an opinion of traffic and hardware I might need to serve the traffic.
+3. The website needs to change a little bit to promote me as agent or provide leads for other agents. We need to have a two routes added to the website: 3.a. Provide links to the public to request agents similir to what Zillow provides ([Image #1]).  3.b. I would need a mechanism to recruit agents, at least a webpage to get their information so I can provide leads for them and ask money from them.
+4. Aida questioned the Renovation cost breakdown provided by AI, especially on this listing https://flips.roozbeh.realtor/admin/active/BA326091746, let's review these breandowns with your eyes, and provide feedback.
+5. Aida asked, and I struggled to answer: "how are we using the training data for future flips?". I think I need to review my model how the old flip data is being used for future flip analysis. Perhaps we can link each properties to past flips done in that area, use the past profits to estimate future profits, or some other ways that you think. I was wondering if you could please provide a plan of action here.  - As mentioned in the past, the output of this work would be a verbose plan so I can give to Sol or Terra to do implementation work, so please avoid changing code or documentation in this session, but please do extensive research based on available knowledge online to see what would be the best course of action
+
 # Public Bay Area fixer-upper search and agent lead plan
 
 November 21, 2026 · Working draft for Terra
@@ -188,3 +241,21 @@ Start with the Fairfield estimate repair and build the pilot in a private previe
 ## Roozbeh’s action item before public launch
 
 - [ ] **When the website is ready for review**, walk my broker and the relevant MLS providers through the private preview. Use the permissions table in section 1 to record the approved uses, processor terms, restrictions, and fees for each source. Confirm the disclosures and lead-routing terms with my broker, then give Terra the written decisions so the team can enable the approved sources and features for launch.
+
+## Notes from Terra
+
+### Baseline
+
+The related existing Home Finder changes and this report were committed as `762648c` with the tag `before_aida_interview`. Unrelated iOS workspace changes, OAuth credential files, and other personal files were excluded. The later UI changes below are uncommitted and local.
+
+### Renovation breakdown
+
+The original UI took the first dollar range from each AI observation and displayed it as the cost for the whole area. For Fairfield, that could present the cost of a bathroom vanity as the bathroom total.
+
+Terra first replaced those amounts with “Room subtotal unavailable.” Roozbeh preferred the earlier concise view with the repair scope available for inspection. The current local UI now displays a short area label and a range when the saved text contains a single range or an explicitly identified total. When the text contains multiple component ranges without a clear total, it displays “View cost details.” The complete saved observation appears on hover and can be opened by clicking or using the keyboard. The local `flip_ui` container was rebuilt, and the range extraction was checked against roof, kitchen, and bathroom examples.
+
+Review the result at http://localhost:8090/admin/active/BA326091746. The ranges and descriptions come from the existing AI assessment. They have not been checked against contractor bids or a cost database. The display uses a text heuristic, so even a single range may describe one component rather than a complete room. The proposed structured scope and cost data, alternatives, verified sources, and reconciled totals still need implementation.
+
+### Remaining plan
+
+The public preview, buyer contact and tour forms, agent recruitment, lead inbox, usage metering, larger analysis workflow, historical-project comparisons, and evaluation have not been implemented. No new AI assessments or market-wide processing were run. Roozbeh will handle the broker and MLS review when the website is ready for review. No changes were pushed to the remote server.

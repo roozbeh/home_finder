@@ -1,0 +1,73 @@
+{
+  "inventory": {
+    "mode": "preview",
+    "published_homes": 10061,
+    "ordinary_preview_examples": 4,
+    "metadata_only_load_fixtures": 10057,
+    "generator": "buyer_benchmark.build_scale_catalog"
+  },
+  "runtime": {
+    "host_path": "http://127.0.0.1:8092",
+    "container_cpus": 2,
+    "container_memory_bytes": 4294967296,
+    "gunicorn_workers": 2,
+    "data_store": "Read-only SQLite catalog inside the fixture container"
+  },
+  "command": "python3 data_service/flip_ui/buyer_benchmark.py http://127.0.0.1:8092 r4q7w3n6fa1p --seconds 15",
+  "requested_rps": 20,
+  "elapsed_seconds": 14.96,
+  "requests_per_elapsed_second": 20.06,
+  "overall": {
+    "requests": 300,
+    "errors": 0,
+    "error_percent": 0.0,
+    "p50_ms": 6.13,
+    "p95_ms": 33.76,
+    "p99_ms": 36.41,
+    "body_bytes": 2369300,
+    "db_instrumented_responses": 300,
+    "db_reads": 600,
+    "db_p95_ms": 29.69
+  },
+  "paths": {
+    "/homes": {
+      "requests": 100,
+      "errors": 0,
+      "p50_ms": 28.47,
+      "p95_ms": 35.8,
+      "p99_ms": 37.86,
+      "body_bytes": 1079100,
+      "db_reads": 400,
+      "db_p95_ms": 31.93
+    },
+    "/homes/r4q7w3n6fa1p": {
+      "requests": 100,
+      "errors": 0,
+      "p50_ms": 5.71,
+      "p95_ms": 6.96,
+      "p99_ms": 9.26,
+      "body_bytes": 1039700,
+      "db_reads": 100,
+      "db_p95_ms": 0.27
+    },
+    "/homes/r4q7w3n6fa1p/contact": {
+      "requests": 100,
+      "errors": 0,
+      "p50_ms": 5.43,
+      "p95_ms": 8.04,
+      "p99_ms": 13.75,
+      "body_bytes": 250500,
+      "db_reads": 100,
+      "db_p95_ms": 0.31
+    }
+  },
+  "image_delivery": {
+    "unique_image_requests": 1,
+    "response_status": 200,
+    "body_bytes": 452952,
+    "elapsed_ms": 3.3,
+    "db_reads": 1,
+    "db_ms": 0.515
+  },
+  "scope": "The burst used signed-out HTML GETs. Media delivery was sampled separately. External networks, map tiles, submission writes and paid worker traffic were outside this measurement."
+}
