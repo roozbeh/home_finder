@@ -10,3 +10,19 @@ env
 outputs/
 audit_artifacts/
 .pytest_cache/
+
+# Private MLS publication rules and opaque-ID key
+/data_service/buyer-publication/
+
+# Local configuration, credentials and IDE state
+/.home-finder-local/
+client_secret_*.apps.googleusercontent.com.json
+client_*.apps.googleusercontent.com.plist
+*.xcuserstate
+xcuserdata/
+/data_service/buyer.env
+
+# Generated browser evidence and licensed image comparisons
+/reports/buyer_live_review_*/
+/reports/buyer_preview_*/
+/reports/haiku_gemma_photo_comparison_*.html
