@@ -31,8 +31,14 @@ docker compose -p home-finder-buyer-publisher --env-file /mnt/extra500/flip_find
 Verify the log reports a successful publication and check the file:
 
 ```sh
-sqlite3 -readonly /mnt/extra500/flip_finder/buyer-publisher/catalog/catalog.sqlite \
-  'PRAGMA quick_check; SELECT count(*) FROM homes;'
+python3 - <<'PYTHON'
+import sqlite3
+
+uri = 'file:/mnt/extra500/flip_finder/buyer-publisher/catalog/catalog.sqlite?mode=ro'
+with sqlite3.connect(uri, uri=True) as catalog:
+    print(catalog.execute('PRAGMA quick_check').fetchone()[0])
+    print(catalog.execute('SELECT count(*) FROM homes').fetchone()[0])
+PYTHON
 ```
 
 To stop publication, use the same Compose settings and `stop buyer-publisher`. To roll back code, rebuild from the last working checkout with the private inputs and output directory intact. A buyer web service needs a separately configured read-only mount of the catalog directory and approved HTTPS routing.
