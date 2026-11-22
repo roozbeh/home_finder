@@ -7,9 +7,13 @@ cookies.json
 __pycache__/
 .wdm/
 env
+.pytest_cache/
+
+# Generated research, reports, screenshots and local exports
+/reports/
+/output/
 outputs/
 audit_artifacts/
-.pytest_cache/
 
 # Private MLS publication rules and opaque-ID key
 /data_service/buyer-publication/
@@ -21,8 +25,3 @@ client_*.apps.googleusercontent.com.plist
 *.xcuserstate
 xcuserdata/
 /data_service/buyer.env
-
-# Generated browser evidence and licensed image comparisons
-/reports/buyer_live_review_*/
-/reports/buyer_preview_*/
-/reports/haiku_gemma_photo_comparison_*.html

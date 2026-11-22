@@ -21,7 +21,10 @@ def main() -> None:
     history = sub.add_parser("flip-history", help="read-only observed short-hold resale analysis")
     history.add_argument("--database", default=os.getenv("MONGO_DB", "mls"))
     history.add_argument("--collection", default=os.getenv("MONGO_COLLECTION", "mls_listings"))
-    history.add_argument("--output-dir", type=Path, default=Path("outputs/market_history"))
+    history.add_argument(
+        "--output-dir", type=Path,
+        default=Path.home() / ".local" / "state" / "home-finder" / "market_history",
+    )
     history.add_argument("--max-hold-days", type=int, default=365)
     flipdb = sub.add_parser("flipdb-refresh", help="materialize observed short-hold resale pairs")
     flipdb.add_argument("--database", default=os.getenv("MONGO_DB", "mls"))

@@ -40,7 +40,7 @@ def load_closed_listings(uri: str, database: str, collection: str,
 def write_history_outputs(listings: list, output_dir: Path,
                           max_hold_days: int = 365) -> tuple[Path, Path, Path, Path]:
     """Create private, non-versioned analysis outputs."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     pairs = identify_short_hold_resales(listings, max_hold_days=max_hold_days)
     pair_path = output_dir / "observed_short_hold_resales.csv"
     city_path = output_dir / "city_short_hold_summary.csv"

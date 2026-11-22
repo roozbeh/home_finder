@@ -1,6 +1,6 @@
 # Home Finder repository guide
 
-Start here when working on the MLS pipeline, the buyer site, or the private Flip Finder workspace. See [the handoff](reports/home_finder_handoff_2026-11-22.md) for tested workflows and rollout checks, and [the buyer checklist](reports/terra_public_buyer_implementation_2026-11-21.md) for the original acceptance criteria.
+Start here when working on the MLS pipeline, the buyer site, or the private Flip Finder workspace. [Future work](PLAN_FOR_FUTURE.md) tracks outstanding release, sourcing, analysis and operations tasks. The service runbooks below contain the current commands and verification steps.
 
 ## Services and Docker names
 
@@ -22,7 +22,7 @@ Start here when working on the MLS pipeline, the buyer site, or the private Flip
 - **Publication** runs `buyer_live_feed.py` and `buyer_publish.py`. Source and listing permissions determine the fields and photos that enter the catalog. The public web container receives the catalog through a read-only mount. It has no raw MLS connection. Buyer links use an opaque ID derived from the source and MLS ID with the private publisher key.
 - **MLS refresh** starts at `ops/aws/live_fetcher.sh` and `ops/aws/live_fetcher.cron`. The worker uses `data_service/mls_service/refresh_inventory.py`, `search_and_store.py`, and `fetch_details.py`. Remote logs live under `/mnt/extra500/flip_finder/logs/`. Current detail rechecks start at 10 days, the dashboard flags ages at 15 days, and the buyer policy’s 90-day display expiry is independent.
 - **Photo work** is in `data_service/photo_categorizer/`. Follow the [photo runbook](data_service/photo_categorizer/ACTIVE_LISTINGS.md) for Ollama, checkpoints, and service commands. The backfill’s running state depends on Docker and Ollama on the Mac. The remote ingestion and publisher have their own schedules.
-- **Mobile and app setup** are in [the iOS guide](data_service/iOS/CLAUDE.md). [The service guide](data_service/CLAUDE.md) contains subsystem background. Prefer active Compose definitions, cron scripts, and the handoff for current service names and schedules.
+- **Mobile and app setup** are in [the iOS guide](data_service/iOS/CLAUDE.md). [The service guide](data_service/CLAUDE.md) contains subsystem background. Prefer active Compose definitions and cron scripts for current service names and schedules.
 
 ## Common local commands
 
@@ -43,4 +43,4 @@ For a fresh local buyer catalog, configure the private inputs, then start `buyer
 - Use real eligible inventory for buyer-facing review and isolated fixtures for regression tests. Verify desktop and mobile search, list/map parity, media and withdrawal behavior, and contact, tour, and partner receipts when verified identity is configured.
 - Run buyer regressions with `python -m unittest buyer_public_test buyer_property_types_test buyer_analysis_test buyer_analysis_review_test buyer_worker_test tests.test_buyer_supply` from `data_service/flip_ui`. The refresh and photo recovery tests live next to their workers.
 - The remote checkout is `/home/ubuntu/home_finder`. Deploy a reviewed GitHub commit with a fast-forward pull, then rebuild only the intended service. Treat a healthy catalog publisher, a local buyer preview, and a verified public HTTPS release as separate milestones.
-- Keep credentials, raw data, generated browser screenshots, and private inbox evidence in local or operator storage. The repository includes example configuration and fixture-based tests. Save worktree changes intentionally and review staged files before committing.
+- Keep credentials, raw data, generated reports, market exports, screenshots, and private inbox evidence in private storage outside the checkout. The repository contains example settings and fixture-based tests. The root `reports/`, `output/` and `outputs/` names are ignored.

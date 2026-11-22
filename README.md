@@ -44,8 +44,10 @@ infer renovation work, arm's-length status, or net/project profit.
 
 ```bash
 set -a; source data_service/env; set +a
-python -m flip_finder.cli flip-history --output-dir outputs/market_history
+python -m flip_finder.cli flip-history
 ```
+
+The default destination is `~/.local/state/home-finder/market_history`. Use `--output-dir` to select a different private directory.
 
 `observed_short_hold_resales.csv` identifies whether each match used APN
 (preferred) or normalized address (research-only). City and observed MLS

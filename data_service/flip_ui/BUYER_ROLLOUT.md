@@ -28,7 +28,7 @@ Put the existing Mongo connection and a stable random `BUYER_PUBLIC_ID_KEY` of a
 | Lead handling | Approve collection wording, notice and retention, secure delivery, response ownership, touring and representation procedures, and any buyer-authorized introductions to a verified partner. Agree on paid terms with the responsible broker before enabling referral or advertising payments. Title leads, trust-owner targeting, gated listings and automated paid distribution remain business follow-up. |
 | Production access | Approve the hostname, TLS renewal owner, operator-only network and hostname for buyer queues, admin credentials, protected backup and restore process, and which listing source to enable first. |
 
-The MLS decisions and use cases are in the [November 21 launch plan](../../reports/public_fixer_upper_launch_plan_2026-11-21.md).
+The [future work plan](../../PLAN_FOR_FUTURE.md) tracks MLS decisions and outstanding checks.
 
 ## Stage the approved service
 
