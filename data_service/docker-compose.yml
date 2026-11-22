@@ -72,6 +72,28 @@ services:
     tmpfs:
       - /tmp
 
+  # Persistent local Moondream backfill. Keeps logs after exit and resumes the
+  # same Mongo checkpoint if an upstream interruption exits the process.
+  photo_backfill:
+    build:
+      context: ./photo_categorizer
+    container_name: moondream-mls-backfill
+    profiles: ["photo-backfill"]
+    env_file:
+      - env
+    entrypoint: ["python", "/app/bulk_moondream.py"]
+    command: ["--model", "moondream:latest", "--workers", "${MOONDREAM_WORKERS:-8}"]
+    restart: on-failure
+    mem_limit: 768m
+    cpus: 2.0
+    read_only: true
+    tmpfs:
+      - /tmp
+    logging:
+      options:
+        max-size: "20m"
+        max-file: "4"
+
   # ── Marketing content generator ───────────────────────────────────────────
   # Generates Reddit posts, Instagram captions, and blog post drafts using
   # live MLS data + Claude. Run on demand — does not stay up.
@@ -120,7 +142,7 @@ services:
     build:
       context: ./flip_ui
       dockerfile: Dockerfile
-    container_name: flip_ui
+    container_name: flips_admin
     restart: unless-stopped
     env_file:
       - env

@@ -9,6 +9,13 @@ LOG_DIR="${FLIP_FINDER_LOG_DIR:-/mnt/extra500/flip_finder/logs}"
 LOG_FILE="$LOG_DIR/live_fetcher.log"
 LOCK_FILE="${FLIP_FINDER_LOCK_FILE:-$LOG_DIR/live_fetcher.lock}"
 MAX_LOG_BYTES=52428800
+CYCLE_STARTED=$(date +%s)
+NIGHTLY_SOLD=false
+case "${1:-}" in
+  --nightly-sold) NIGHTLY_SOLD=true; LOG_FILE="$LOG_DIR/sold_discovery.log" ;;
+  "") ;;
+  *) echo "Unknown MLS refresh mode: $1" >&2; exit 2 ;;
+esac
 
 mkdir -p "$LOG_DIR"
 if [[ -f "$LOG_FILE" ]] && [[ $(wc -c < "$LOG_FILE") -ge $MAX_LOG_BYTES ]]; then
@@ -18,8 +25,13 @@ exec >> "$LOG_FILE" 2>&1
 
 echo "[$(date -Is)] live fetcher starting"
 exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-  echo "[$(date -Is)] skipped: previous live-fetcher run still holds lock"
+if "$NIGHTLY_SOLD"; then
+  if ! flock -w 780 9; then
+    echo "[$(date -Is)] sold discovery skipped: MLS refresh lock unavailable"
+    exit 1
+  fi
+elif ! flock -n 9; then
+  echo "[$(date -Is)] skipped: another MLS refresh holds the lock"
   exit 0
 fi
 
@@ -41,22 +53,17 @@ fi
 
 docker cp mls_service/mls_session.py "$WORKER_CONTAINER":/tmp/mls_session.py
 docker cp mls_service/search_and_store.py "$WORKER_CONTAINER":/tmp/search_and_store.py
-docker exec "$WORKER_CONTAINER" python /tmp/search_and_store.py --active-only --market bay-area
+if "$NIGHTLY_SOLD"; then
+  docker exec "$WORKER_CONTAINER" python -u /tmp/search_and_store.py \
+    --sold-only --market bay-area --sold-lookback-days 14
+  echo "[$(date -Is)] sold discovery completed"
+  exit 0
+fi
 
-# At one request/second this cap leaves room inside a 15-minute cadence while
-# still allowing a temporary backlog to drain.  Normal runs fetch only new
-# active records because already enriched records are excluded.
 docker cp mls_service/fetch_details.py "$WORKER_CONTAINER":/tmp/fetch_details.py
-docker exec "$WORKER_CONTAINER" python /tmp/fetch_details.py --active-only --limit 450 --stop-at-storage-mb 4500
-
-# Historical closed-sale details are not on the urgent active-inventory path,
-# but are essential for resale-pair research and later comparable analysis.
-# Fetch a bounded backlog each run; per-listing failures remain in detail_logs
-# for diagnosis rather than silently dropping records.
-docker exec "$WORKER_CONTAINER" python /tmp/fetch_details.py --closed-only --limit 450 --stop-at-storage-mb 4500
-# Resume a bounded photo-repair batch each cycle. The worker prioritizes demo
-# listings/comparables and maintains a lease to prevent overlapping repair jobs.
-docker cp mls_service/repair_galleries.py "$WORKER_CONTAINER":/tmp/repair_galleries.py
-docker cp mls_service/gallery_progress.py "$WORKER_CONTAINER":/tmp/gallery_progress.py
-docker exec "$WORKER_CONTAINER" python /tmp/repair_galleries.py --scope all --limit 100
+docker cp mls_service/refresh_inventory.py "$WORKER_CONTAINER":/tmp/refresh_inventory.py
+docker exec "$WORKER_CONTAINER" python -u /tmp/refresh_inventory.py \
+  --deadline "$((CYCLE_STARTED + ${FLIP_FINDER_CYCLE_SECONDS:-780}))" \
+  --limit "${FLIP_FINDER_DETAIL_LIMIT:-25}" \
+  --display-check-days "${FLIP_FINDER_DISPLAY_CHECK_DAYS:-10}" --storage-mb 4500
 echo "[$(date -Is)] live fetcher completed"

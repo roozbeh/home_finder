@@ -11,6 +11,9 @@ from zoneinfo import ZoneInfo
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect
 from pymongo import MongoClient
+from pymongo.errors import PyMongoError
+
+from admin_inventory_metrics import STALE_DAYS, active_freshness, photo_coverage
 import anthropic
 
 from google.oauth2 import id_token as google_id_token
@@ -763,6 +766,16 @@ def admin_data_status():
     )
 
     now = datetime.now(timezone.utc)
+    try:
+        refresh_counts = active_freshness(listings, now)
+    except PyMongoError:
+        app.logger.warning("Active freshness metrics unavailable", exc_info=True)
+        refresh_counts = None
+    try:
+        classification_counts = photo_coverage(mongo[os.environ.get("FLIPDB_DATABASE", "flip_finder")])
+    except PyMongoError:
+        app.logger.warning("Photo classification metrics unavailable", exc_info=True)
+        classification_counts = None
     session_age_minutes = None
     if latest_session and isinstance(latest_session.get("timestamp"), datetime):
         timestamp = latest_session["timestamp"]
@@ -806,6 +819,9 @@ def admin_data_status():
         active_count=active_count,
         sold_count=sold_count,
         active_cities=active_cities,
+        freshness_days=STALE_DAYS,
+        refresh_counts=refresh_counts,
+        classification_counts=classification_counts,
         active_with_details=active_with_details,
         active_missing_details=active_missing_details,
         detail_coverage_pct=round(active_with_details * 100 / active_count, 1) if active_count else 0,

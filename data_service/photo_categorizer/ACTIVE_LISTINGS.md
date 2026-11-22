@@ -1,10 +1,23 @@
-# Active listing assessment with Claude Haiku
+# MLS photo classification and listing assessment
 
 Build once after code updates:
 
 ```sh
 docker-compose -f data_service/docker-compose.yml --profile photo-categorization build photo_categorizer
 ```
+
+## Local Ollama
+
+Run Ollama on the Docker host and use `--local` to switch both photo classification and any requested insight to the installed local model. The default is `gemma4:12b`. The worker checks Ollama for vision capability before submitting photos. Use `ollama list` to find the exact tag and `ollama show <MODEL_TAG>` to see its capabilities.
+
+```sh
+docker-compose -f data_service/docker-compose.yml --profile photo-categorization run --rm photo_categorizer \
+  --pair-key <PAIR_KEY> --max-photos-per-side 64 --max-api-requests 129 --generate-insight --local
+```
+
+For an active listing, pass `--listing-id <LISTING_ID>` and allow up to 65 requests for 64 photos and one insight. `--max-api-requests` limits model requests for either provider. The Docker worker connects to `http://host.docker.internal:11434/api/chat` by default. Set `PHOTO_CATEGORIZER_OLLAMA_MODEL` in `data_service/env` to choose a persistent local default. `--model <MODEL_TAG>` overrides it for one run. Use `--ollama-url` if Ollama runs at a different address reachable from the container. Set `--ollama-timeout` if shared use of the local server needs a different request timeout. Local inference has no per-request API fee. Saved classifications and insights record the actual model. A repeated run with that model can reuse its stored labels. The historical-pair UI uses one current label per photo, so a successful run with a different model replaces that photo’s current machine label while retaining reviewer overrides.
+
+## Active listing with the default provider
 
 Verify the full gallery first (no AI calls or writes):
 
@@ -27,3 +40,32 @@ Photos: flip_finder.active_photo_classifications. Insights: flip_finder.active_r
 Sales evidence: same building type, same city, closed in last 365 days, within two miles, 70–140% of subject sqft, within one bedroom. Up to eight nearest distinct properties, with actual MLS IDs, sale prices, distances and public remarks. AI must use at least three supplied comps to supply a resale range. Condition and micro-location adjustments are AI estimates and require human review; there is no contractor inspection or appraisal. No resale value is copied from the preliminary candidate screen.
 
 The UI solves ten-month break-even using the assessed resale range, proposed renovation range, monthly HOA, 10% annual simple interest, 1.1% annual purchase-price tax, 1% buy closing and 6.5% sale closing. Insurance is excluded. Unverified HOA or inadequate resale evidence leaves the recommendation pending. The monthly HOA is set to zero when MLS explicitly reports no HOA; other frequencies must be normalized. Purchase ceilings are estimates, with no target-profit cushion by default.
+
+## Market-wide Moondream photo backfill
+
+Run from the repository root with Ollama available on the Docker host. Start one worker per catalog. Use a separate Compose project so routine stops of the web stack leave this worker alone. The detached service keeps logs after exit and Docker restarts it after a process failure.
+
+```sh
+docker compose -p home-finder-photo -f data_service/docker-compose.yml \
+  --profile photo-backfill up -d --build photo_backfill
+```
+
+Follow a live, read-only report in a separate terminal. This works with a worker that was already running before the image was rebuilt.
+
+```sh
+docker compose -f data_service/docker-compose.yml --profile photo-categorization run --rm \
+  --entrypoint python photo_categorizer \
+  /app/bulk_moondream.py --model moondream:latest --status --watch
+```
+
+The report refreshes every 15 seconds and lists scanned, remaining, and percent scanned for active and sold inventory. It shows photo totals from completed galleries and reads saved photos for the gallery after the last checkpoint, including the latest save time. That gallery can include labels reused from an earlier pass. The report counts listings at startup, so changes to MLS inventory can affect the totals seen by a later monitor. Omit `--watch` for one snapshot. Ctrl+C exits the monitor.
+
+`docker logs -f moondream-mls-backfill` shows phase counts, the current gallery and Ollama retries. Use `docker stop moondream-mls-backfill` to pause and `docker start moondream-mls-backfill` to resume. Check `docker ps -a --filter name=moondream-mls-backfill` after a full Docker Desktop or host restart. Successful photos are reused, including any processed before an interruption within a listing. Another pass retries previously unavailable photos and checks for new ones. The worker retries transient download and inference failures. Persistent inference failures exit the process so Docker can restart it without advancing the gallery checkpoint. Use `--dry-run` on the manual image for a read-only inventory and model check.
+
+The persistent service defaults to eight workers. Set `MOONDREAM_WORKERS` on the Compose invocation to override it. Ollama's `OLLAMA_NUM_PARALLEL` should match. On this Mac use `launchctl setenv OLLAMA_NUM_PARALLEL 8` and `brew services restart ollama` to set the runner slots. On a 24-photo sample with downloads completed before timing, 2, 4 and 8 workers measured 25.6, 63.9 and 69.9 photos per minute. Storage and network time can lower sustained throughput. The percentage in the status report measures listing galleries scanned.
+
+A second test used the same 48 predownloaded photos for each pass and unloaded the model between passes to clear its image cache. With 8, 16 and 32 requests in flight on the same runner, throughput was 49.2, 51.2 and 52.1 photos per minute. Per-request p95 latency grew from 14.6 to 28.3 and 52.1 seconds. All three runs classified all 48 photos and returned matching categories. The regular worker stayed at eight. In the sample, the indexed MongoDB read median was 26 ms and download plus resize took 195 ms. The MongoDB measurement is a read round trip, not write latency.
+
+The worker starts with active listings whose MLS details were fetched within the last 90 days, then scans the remaining active listings and finally sold listings. The 90-day window matches the current buyer publisher policy. Use `--public-check-days` if the publication policy uses a different window. The backfill uses the timestamp for ordering. The publisher still independently applies current inventory and public-display permissions. The priority list is fixed when an active pass starts and resumes from its saved position on restart. The status report shows progress through that list separately.
+
+The worker uses trusted MLS photo hosts. It records unavailable photos and counts references rejected by the host allowlist. It uses local Moondream captions and deterministic room rules. Unclear scenes are filed as `other`. Results go to `mls_photo_classifications` and checkpoints to `mls_photo_backfill_jobs` in the configured Flip Finder Mongo database. The batch keeps previously reviewed labels separate and produces no renovation estimates.

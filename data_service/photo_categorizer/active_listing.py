@@ -1,14 +1,12 @@
-"""Single-listing Haiku classification; no purchase/resale comparison is inferred."""
+"""Single-listing photo classification; no purchase/resale comparison is inferred."""
 import math
-import os
 import json
 from statistics import median
 from datetime import datetime, timezone
-import anthropic
 import requests
 from pymongo import MongoClient
-from categorize_photos import (MONGO_URI, MONGO_DB, FLIPDB_DATABASE, MODEL, gallery_urls,
-    representative_indices, preflight_gallery, image_data_url, classify, extract_json)
+from categorize_photos import (MONGO_URI, MONGO_DB, FLIPDB_DATABASE, gallery_urls,
+    representative_indices, preflight_gallery, image_data_url, classify)
 
 
 def comparable_sales(source, listing):
@@ -46,7 +44,7 @@ def monthly_hoa(listing):
     return fee*factor, 'MLS HOA fee normalized from '+freq
 
 
-def run_active(args):
+def run_active(args, inference):
     with MongoClient(MONGO_URI) as mongo:
         source, db = mongo[MONGO_DB], mongo[FLIPDB_DATABASE]
         listing = source.mls_listings.find_one({'LISTING_ID':args.listing_id})
@@ -63,21 +61,20 @@ def run_active(args):
         selected = [(i, photos[i]) for i in representative_indices(len(photos), args.max_photos_per_side)]
         if not selected: raise SystemExit('No verified gallery references. Backfill first.')
         cache = db.active_photo_classifications
-        pending = [(i,url) for i,url in selected if args.refresh or not cache.find_one({'listing_id':args.listing_id,'photo_url':url,'model':MODEL})]
+        pending = [(i,url) for i,url in selected if args.refresh or not cache.find_one({'listing_id':args.listing_id,'photo_url':url,'model':inference.model})]
         needed = len(pending) + int(args.generate_insight)
         if needed > args.max_api_requests: raise SystemExit(f'Request budget exceeded: need {needed}, allowed {args.max_api_requests}.')
-        print(f'{MODEL}: {len(selected)} photos selected; {len(pending)} uncached; API upper bound {needed}.')
-        client = anthropic.Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'], max_retries=0)
+        print(f'{inference.model}: {len(selected)} photos selected; {len(pending)} uncached; API upper bound {needed}.')
         for index,url in pending:
             response = http.get(url, timeout=30); response.raise_for_status()
-            label = classify(client, image_data_url(response))
+            label = classify(inference, image_data_url(response))
             if not label.get('visible_features'): raise RuntimeError('Invalid photo response; not saved. Resume to retry.')
-            identity = {'listing_id':args.listing_id,'photo_url':url,'model':MODEL}
+            identity = {'listing_id':args.listing_id,'photo_url':url,'model':inference.model}
             cache.update_one(identity, {'$set':{**identity,**label,'photo_index':index,'classified_at':datetime.now(timezone.utc)}}, upsert=True)
             print(f'Photo {index+1}: {label["category"]}', flush=True)
         if args.generate_insight:
             urls = [url for _,url in selected]
-            rows = list(cache.find({'listing_id':args.listing_id,'model':MODEL,'photo_url':{'$in':urls}}, {'_id':0,'category':1,'visible_features':1}))
+            rows = list(cache.find({'listing_id':args.listing_id,'model':inference.model,'photo_url':{'$in':urls}}, {'_id':0,'category':1,'visible_features':1}))
             remarks = (listing.get('details') or {}).get('PUBLIC_REMARKS','')[:4000]
             comps = comparable_sales(source, listing)
             prompt = ('Assess potential renovation work for this ACTIVE listing. There are no after photos. '
@@ -97,9 +94,7 @@ def run_active(args):
                       'If fewer than 3 useful comps or evidence is inadequate, return null resale values and explain why. '
                       'Never invent comps; used_comp_ids must come from the supplied list. '
                       f'Observed MLS building type: {listing.get("BUILDING_TYPE")}; city: {listing.get("CITY")}; size: {listing.get("SQFT")}; public remarks: {remarks}; classified photo observations: {rows}; supplied closed sales: {json.dumps(comps)}')
-            response = client.messages.create(model=MODEL,max_tokens=4000,messages=[{'role':'user','content':prompt}])
-            data = extract_json(''.join(getattr(block,'text','') for block in response.content))
-            if response.stop_reason == 'max_tokens': raise RuntimeError('Truncated assessment; not saved.')
+            data = inference.json(prompt, tokens=4000)
             for key in ('renovation_low','renovation_high'):
                 value = data.get(key)
                 if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or value<0:
@@ -119,7 +114,7 @@ def run_active(args):
                 'used_comp_ids':used,'comps':comps,'hoa_monthly':hoa,'hoa_note':hoa_note,
                 'valuation_status':'AI_estimate_requires_review' if valid_resale else 'pending_reviewed_comparables'}
             db.active_renovation_insights.update_one({'listing_id':args.listing_id},{'$set':{
-                'listing_id':args.listing_id,'model':MODEL,'created_at':datetime.now(timezone.utc),
+                'listing_id':args.listing_id,'model':inference.model,'created_at':datetime.now(timezone.utc),
                 'method':'active_listing_proposed_visible_work','summary':data['summary'],
                 'scope':data.get('scope'),'confidence':data.get('confidence','LOW'),
                 'renovation_low':data['renovation_low'],'renovation_high':data['renovation_high'],
