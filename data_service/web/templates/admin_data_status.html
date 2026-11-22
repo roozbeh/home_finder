@@ -103,17 +103,15 @@
     <div class="section-title">Photo gallery backfill</div>
     <section class="status-card">
       <div class="d-flex justify-content-between align-items-baseline mb-2">
-        <strong>FlipDB listings with complete MLS galleries</strong>
+        <strong>Listings with complete MLS galleries</strong>
         <strong class="{{ 'good' if gallery_coverage_pct >= 95 else 'warn' }}">{{ gallery_coverage_pct }}%</strong>
       </div>
       <div class="progress mb-2"><div class="progress-bar {{ 'bg-success' if gallery_coverage_pct >= 95 else 'bg-warning' }}" style="width: {{ gallery_coverage_pct }}%"></div></div>
       <div class="subtext">{{ '{:,}'.format(gallery_verified) }} verified · {{ '{:,}'.format(gallery_remaining) }} awaiting repair</div>
-      <div class="subtext mt-1">Scope: purchase and resale records referenced by FlipDB pairs</div>
 
       <div class="status-row mt-3"><span class="status-key">Latest backfill</span><span class="status-value">{{ gallery_backfill_display.relative }}{% if gallery_backfill_display.absolute %}<span class="subtext d-block">{{ gallery_backfill_display.absolute }}</span>{% endif %}</span></div>
       <div class="status-row"><span class="status-key">Run state</span><span class="status-value {{ 'bad' if latest_gallery_backfill.get('status') == 'blocked_auth' else ('good' if latest_gallery_backfill.get('status') in ['running', 'complete'] else 'warn') }}">{{ latest_gallery_backfill.get('status', 'Not started').replace('_', ' ').title() }}</span></div>
       {% if latest_gallery_backfill %}
-      <div class="status-row"><span class="status-key">Run scope</span><span class="status-value">{{ 'FlipDB pairs only' if latest_gallery_backfill.get('scope') == 'flip_pairs' else 'All eligible listings (legacy run)' }}</span></div>
       <div class="status-row"><span class="status-key">This run</span><span class="status-value">{{ '{:,}'.format(latest_gallery_backfill.get('processed', 0)) }} / {{ '{:,}'.format(latest_gallery_backfill.get('total_candidates', 0)) }} processed</span></div>
       <div class="status-row"><span class="status-key">Successful galleries</span><span class="status-value good">{{ '{:,}'.format(latest_gallery_backfill.get('succeeded', 0)) }}</span></div>
       <div class="status-row"><span class="status-key">Unresolved</span><span class="status-value {{ 'bad' if latest_gallery_backfill.get('failed', 0) else 'good' }}">{{ '{:,}'.format(latest_gallery_backfill.get('failed', 0)) }}</span></div>

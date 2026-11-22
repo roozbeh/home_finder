@@ -7,7 +7,7 @@ State checked on November 22, 2026. Use this as the starting point for buyer UI,
 - Read the [original request, Aida’s feedback, and Terra’s notes](public_fixer_upper_launch_plan_2026-11-21.md) and the [implementation checklist](terra_public_buyer_implementation_2026-11-21.md). The checklist describes the original target. Use the current state below when it differs from historical notes.
 - Anonymous browsing uses real MLS listings cleared by the publisher. Keep fictional inventory out of buyer-facing review and production. Isolated automated tests can use fixtures, and earlier fixture screenshots are test evidence.
 - Keep the same buyer application behavior in local review and deployment. The destination and approved configuration determine what is published. Preserve the private admin and demo role boundaries.
-- The main working checkout has unrelated edits, untracked buyer work, and a branch history that diverges from GitHub `main`. Inspect the worktree before editing or staging. Keep release commits scoped and use a clean checkout based on GitHub `main` when packaging work for the remote. The refresh, dashboard, and buyer catalog publisher are on GitHub and on the remote. The new public web routes, buyer submission flows, and bulk photo worker remain local.
+- Local `main` includes the reviewed buyer and photo backfill work and the merged GitHub history. The refresh, dashboard, and buyer catalog publisher have been deployed independently. Treat the public buyer launch as a separate release, and read the rollout guide before enabling public ingress. Browser captures, private settings, and unrelated personal files stay local and may be absent in a new checkout.
 
 ## Review links and deployment boundaries
 
