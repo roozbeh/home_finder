@@ -44,7 +44,7 @@
     <div class="row g-3">
       <div class="col-12 col-md-4"><div class="card"><div class="card-body">
         <div class="label">Active Properties</div><div class="value">{{ '{:,}'.format(active_count) }}</div>
-        <div class="subtext">Verified <code>ACTV</code> inventory</div>
+        <div class="subtext">Stored <code>ACTV</code> inventory</div>
       </div></div></div>
       <div class="col-12 col-md-4"><div class="card"><div class="card-body">
         <div class="label">Sold Properties</div><div class="value">{{ '{:,}'.format(sold_count) }}</div>
@@ -53,6 +53,31 @@
       <div class="col-12 col-md-4"><div class="card"><div class="card-body">
         <div class="label">Cities With Active Inventory</div><div class="value">{{ '{:,}'.format(active_cities) }}</div>
         <div class="subtext">Current active-data coverage</div>
+      </div></div></div>
+    </div>
+
+    <div class="section-title">Classification and freshness</div>
+    <div class="row g-3">
+      <div class="col-12 col-md-4"><div class="card"><div class="card-body">
+        <div class="label">Properties with classified photos</div>
+        {% if classification_counts is not none %}
+        <div class="value">{{ '{:,}'.format(classification_counts.total) }}</div>
+        <div class="subtext">Unique MLS listings with at least one saved category. {{ '{:,}'.format(classification_counts.bulk) }} in the market-wide backfill.</div>
+        {% else %}<div class="subtext">Count unavailable</div>{% endif %}
+      </div></div></div>
+      <div class="col-12 col-md-4"><div class="card"><div class="card-body">
+        <div class="label">Active inventory older than {{ freshness_days }} days</div>
+        {% if refresh_counts is not none %}
+        <div class="value">{{ '{:,}'.format(refresh_counts.inventory_stale) }}</div>
+        <div class="subtext">Stored <code>ACTV</code> listings last seen in inventory more than {{ freshness_days }} days ago.{% if refresh_counts.inventory_unknown %} {{ '{:,}'.format(refresh_counts.inventory_unknown) }} without a timestamp.{% endif %}</div>
+        {% else %}<div class="subtext">Count unavailable</div>{% endif %}
+      </div></div></div>
+      <div class="col-12 col-md-4"><div class="card"><div class="card-body">
+        <div class="label">Active details older than {{ freshness_days }} days</div>
+        {% if refresh_counts is not none %}
+        <div class="value">{{ '{:,}'.format(refresh_counts.detail_stale) }}</div>
+        <div class="subtext">Stored <code>ACTV</code> listings whose details and display settings were checked more than {{ freshness_days }} days ago.{% if refresh_counts.detail_unknown %} {{ '{:,}'.format(refresh_counts.detail_unknown) }} without a detail timestamp.{% endif %}</div>
+        {% else %}<div class="subtext">Count unavailable</div>{% endif %}
       </div></div></div>
     </div>
 
