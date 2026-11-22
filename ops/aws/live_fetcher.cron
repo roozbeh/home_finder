@@ -1,3 +1,5 @@
 # Refresh active Bay Area inventory and bounded new-listing details every 15 min.
 # The script owns locking, logs, MLS-session failure handling, and storage safeguards.
 */15 * * * * FLIP_FINDER_APP_ROOT=/home/ubuntu/home_finder FLIP_FINDER_LOG_DIR=/mnt/extra500/flip_finder/logs /home/ubuntu/home_finder/ops/aws/live_fetcher.sh
+# Discover recently closed listings overnight. Both modes use the same MLS lock.
+7 3 * * * FLIP_FINDER_APP_ROOT=/home/ubuntu/home_finder FLIP_FINDER_LOG_DIR=/mnt/extra500/flip_finder/logs /home/ubuntu/home_finder/ops/aws/live_fetcher.sh --nightly-sold

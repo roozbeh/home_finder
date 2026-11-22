@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+from contextlib import nullcontext
 import os
 import sys
 import time
@@ -38,7 +39,9 @@ MONGO_DB   = os.environ.get("MONGO_DB", "mls")
 # Fields to skip when comparing for changes (HTML blobs, arrays, metadata)
 SKIP_FIELDS = {"SOURCE_MLS_CIRCLE", "TINYPROPPHOTO_ONELINE", "TOOLS", "LPHOTOS"}
 ENRICHED_FIELDS = {"photos", "details", "details_fetched", "photo_gallery_fetched",
-                   "photo_gallery_repair", "_id", "_history", "_inserted_at", "_updated_at"}
+                   "photo_gallery_repair", "_id", "_history", "_inserted_at", "_updated_at",
+                   "active_last_seen_at", "active_search_city", "active_missing_since",
+                   "active_status_next_check", "sold_last_seen_at", "refresh_retry_after"}
 
 # Fields to coerce from string to number for correct range queries
 NUMERIC_FIELDS = {
@@ -231,6 +234,8 @@ def fetch_listings(session: requests.Session, payload: dict = None,
     resp.raise_for_status()
     data     = resp.json()
     listings = data.get("data", data) if isinstance(data, dict) else data
+    if not isinstance(listings, list) or any(not isinstance(row, dict) for row in listings):
+        raise ValueError("Unexpected MLS search response")
     print(f"  Fetched {len(listings)} listings {label}")
     return listings
 
@@ -296,7 +301,9 @@ def fetch_sold_listings(session: requests.Session,
 
 def fetch_target_active_listings(session: requests.Session,
                                  cities: list[str] = TARGET_CITIES,
-                                 statuses: str = "ACTV") -> list[dict]:
+                                 statuses: str = "ACTV", *,
+                                 observed: dict | None = None,
+                                 complete_cities: set | None = None) -> list[dict]:
     """Fetch the verified active inventory for each requested city.
 
     ``ACTV`` is the only active status whose meaning has been verified for
@@ -306,8 +313,15 @@ def fetch_target_active_listings(session: requests.Session,
     by_id: dict[str, dict] = {}
     for city in cities:
         payload = build_search_payload(statuses, city)
-        for row in fetch_listings(session, payload, label=f"[active {city}]"):
-            by_id[row.get("LISTING_ID") or row.get("DCID")] = row
+        rows = fetch_listings(session, payload, label=f"[active {city}]")
+        for row in rows:
+            identity = row.get("LISTING_ID") or row.get("DCID")
+            by_id[identity] = row
+            if observed is not None and identity:
+                observed.setdefault(identity, city)
+        if (complete_cities is not None and len(rows) < ROW_CAP_THRESHOLD
+                and all(row.get("LISTING_ID") or row.get("DCID") for row in rows)):
+            complete_cities.add(city)
     by_id.pop(None, None)
     print(f"  Target-city active total (deduped): {len(by_id)}")
     return list(by_id.values())
@@ -315,11 +329,15 @@ def fetch_target_active_listings(session: requests.Session,
 
 # ── Upsert with history ───────────────────────────────────────────────────────
 
-def upsert_listings(listings: list[dict]):
-    client   = MongoClient(MONGO_URI)
-    db       = client[MONGO_DB]
-    coll     = db.mls_listings
-    now      = datetime.now(timezone.utc)
+def upsert_listings(listings: list[dict], *, database=None, observed=None, seen_at=None, sold_seen_at=None):
+    connection = MongoClient(MONGO_URI) if database is None else None
+    with connection if connection is not None else nullcontext():
+        db = connection[MONGO_DB] if connection is not None else database
+        return _upsert_listings(db.mls_listings, listings, observed, seen_at, sold_seen_at)
+
+
+def _upsert_listings(coll, listings, observed, seen_at, sold_seen_at):
+    now = datetime.now(timezone.utc)
 
     inserted = updated = unchanged = 0
 
@@ -331,10 +349,15 @@ def upsert_listings(listings: list[dict]):
         if not lid:
             continue
 
-        existing = coll.find_one({"LISTING_ID": listing.get("LISTING_ID", lid)})
+        # Mongo retains summary status as received. Inventory membership has its own timestamp.
+        seen = {"active_last_seen_at": seen_at, "active_search_city": observed[lid]} if observed else {}
+        if sold_seen_at is not None and listing.get("RAW_STATUS") == SOLD_STATUS:
+            seen["sold_last_seen_at"] = sold_seen_at
+        identity_query = {"LISTING_ID": lid} if listing.get("LISTING_ID") else {"DCID": lid}
+        existing = coll.find_one(identity_query, {"details": 0, "photos": 0, "_history": 0})
 
         if existing is None:
-            doc = dict(listing)
+            doc = {**listing, **seen}
             doc["_inserted_at"] = now
             doc["_updated_at"]  = now
             doc["_history"]     = []
@@ -357,7 +380,9 @@ def upsert_listings(listings: list[dict]):
                         "new_value": new_val,
                     })
 
-            update_doc = {"$set": {**listing, "_updated_at": now}}
+            update_doc = {"$set": {**listing, **seen, "_updated_at": now}}
+            if "active_last_seen_at" in seen:
+                update_doc["$unset"] = {"active_missing_since": "", "active_status_next_check": ""}
             if changes:
                 update_doc["$push"] = {"_history": {"$each": changes}}
                 updated += 1
@@ -365,11 +390,10 @@ def upsert_listings(listings: list[dict]):
                 unchanged += 1
 
             coll.update_one(
-                {"LISTING_ID": listing.get("LISTING_ID", lid)},
+                {"_id": existing["_id"]},
                 update_doc,
             )
 
-    client.close()
     print(f"  ✓ Inserted: {inserted}  Updated: {updated}  Unchanged: {unchanged}")
     return inserted, updated, unchanged
 
@@ -472,6 +496,7 @@ def main():
     # Failures here must not affect the original active search, which has
     # already completed and been logged.
 
+    sold_search_error = False
     if args.active_only:
         print("[4/5] Skipping sold/closed refresh (--active-only).")
     else:
@@ -484,10 +509,13 @@ def main():
                 progress=lambda done, total, city, rows: log_sold_progress(
                     started_at, args.market, done, total, city, rows),
             )
-            ins, upd, unch = upsert_listings(sold)
+            ins, upd, unch = upsert_listings(
+                sold, sold_seen_at=started_at if args.sold_lookback_days <= 14 else None,
+            )
             log_run(started_at, time.time() - t1, len(sold), ins, upd, unch,
                     error="; ".join(city_errors) if city_errors else None,
                     run_type="search_sold")
+            sold_search_error = bool(city_errors)
         except MLSAuthenticationError as e:
             retire_session(MONGO_URI, MONGO_DB, token["_id"], str(e))
             message = f"MLS session rejected and marked expired: {e}"
@@ -497,10 +525,13 @@ def main():
             sys.exit(1)
         except Exception as e:
             print(f"✗ Sold fetch failed: {e}")
+            sold_search_error = True
             log_run(started_at, time.time() - t1, 0, 0, 0, 0, error=str(e),
                     run_type="search_sold")
 
     if args.sold_only:
+        if sold_search_error:
+            sys.exit(1)
         print("[5/5] Skipping target active refresh (--sold-only).")
         print("Done.")
         return
