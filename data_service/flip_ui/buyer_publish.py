@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -9,12 +10,13 @@ import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from buyer_analysis import comparable_sales, project_matches, purchase_recommendation, scopes
+from buyer_analysis import comparable_sales, money, project_matches, purchase_recommendation, saved_flip_breakdown, scopes
 from buyer_catalog import utcnow
 from buyer_listing_facts import checked_facts, listing_credit, public_text
 from buyer_media import approved_mls_photo_url, validated_jpeg
 from buyer_photo_labels import CATEGORIES
 from buyer_property_types import property_type_group, property_type_label
+from renovation_drafts import METHOD as LOCAL_ESTIMATE_METHOD
 
 FIELDS = ('city', 'price', 'property_type', 'beds', 'baths', 'sqft', 'status', 'address',
           'geolocation', 'media', 'public_remarks', 'credits', 'updated', 'days_on_market',
@@ -30,8 +32,96 @@ def timestamp(value):
     return result.astimezone(timezone.utc).isoformat()
 
 
-def rights(manifest, row):
-    now = utcnow()
+def checked_operator_estimate(estimate):
+    if not isinstance(estimate, dict):
+        return None
+    low, high = estimate.get('low'), estimate.get('high')
+    if all(type(value) in (int, float) and math.isfinite(value) for value in (low, high)) and 0 <= low <= high:
+        return {'low': low, 'high': high}
+    return None
+
+
+SAVED_COST_RANGE = re.compile(
+    r'\$([0-9][0-9,]*(?:\.[0-9]+)?)(k?)\s*[-–—]\s*\$([0-9][0-9,]*(?:\.[0-9]+)?)(k?)',
+    re.IGNORECASE,
+)
+MLS_EVIDENCE_TEXT = re.compile(
+    r'\b(?:MLS|comps?|comparables?|closed sales?|private remarks?|showing|seller|owner|agent|contact|address)\b',
+    re.IGNORECASE,
+)
+
+
+def saved_work_note(detail):
+    if not isinstance(detail, str):
+        return None
+    sentences = re.split(r'(?<=[.!?])\s+', detail)
+    notes = [note for sentence in sentences if not MLS_EVIDENCE_TEXT.search(sentence)
+             and (note := public_text(sentence, maxlength=900))]
+    return public_text(' '.join(notes), maxlength=900)
+
+
+def project_operator_assessment(home, expires, assessment):
+    """Copy operator-authorized estimates, omitting underlying photo evidence."""
+    estimate = checked_operator_estimate({'low': assessment.get('renovation_low'),
+                                          'high': assessment.get('renovation_high')})
+    if assessment.get('method') == LOCAL_ESTIMATE_METHOD:
+        areas = []
+        for area in (assessment.get('area_estimates') or {}).values():
+            if not isinstance(area, dict) or not (label := public_text(area.get('label'), maxlength=50)):
+                continue
+            items = []
+            for observation in area.get('items') or []:
+                if not isinstance(observation, dict):
+                    continue
+                task = public_text(observation.get('task'), maxlength=90)
+                if task:
+                    items.append({'label': task, 'detail': saved_work_note(observation.get('detail')),
+                                  **(checked_operator_estimate(observation) or {})})
+            areas.append({'label': label, 'condition': saved_work_note(area.get('condition')),
+                          'partial': area.get('partial') is True, 'items': items,
+                          **(checked_operator_estimate(area) or {})})
+        if areas:
+            home['operator_renovation_estimate'] = {
+                **(estimate or {}), 'areas': areas, 'partial': assessment.get('state') == 'partial',
+            }
+        return
+    if not estimate:
+        return
+    home['operator_renovation_estimate'] = estimate
+    existing = home.get('recommendation')
+    if ((existing and not existing.get('operator_saved'))
+            or not (breakdown := saved_flip_breakdown(assessment, home['price']))):
+        return
+    items = []
+    for observation in assessment.get('observations') or []:
+        if not isinstance(observation, dict):
+            continue
+        label = public_text(observation.get('area'), maxlength=60)
+        detail = observation.get('detail')
+        match = SAVED_COST_RANGE.search(detail) if isinstance(detail, str) else None
+        if not label or not match:
+            continue
+        low, low_scale, high, high_scale = match.groups()
+        low = float(low.replace(',', '')) * (1_000 if low_scale else 1)
+        high = float(high.replace(',', '')) * (1_000 if high_scale else 1)
+        if estimate_item := checked_operator_estimate({'low': low, 'high': high}):
+            items.append({'label': label, **estimate_item, 'detail': saved_work_note(detail)})
+    ledger = [{'label': label, 'amount': money(amount)} for label, amount in breakdown.pop('lines')
+              if label != 'HOA carrying cost' or amount]
+    rounding = -sum(line['amount'] for line in ledger[:-1])
+    if rounding:
+        ledger.insert(-1, {'label': 'Whole-dollar rounding', 'amount': rounding})
+    profit = -breakdown['gap'] * 1.1025
+    home['recommendation'] = {
+        **{key: money(value) for key, value in breakdown.items()},
+        'operator_saved': True, 'hold_months': 10, 'ledger': ledger, 'renovation_items': items,
+        'renovation_range': estimate, 'result': money(profit), 'profitable': money(profit) > 0,
+    }
+    home['recommendation_expires'] = expires
+
+
+def rights(manifest, row, *, now=None):
+    now = now or utcnow()
     source = manifest['sources'].get(row.get('source'), {})
     policy = row.get('policy', {})
     if manifest.get('mode') == 'approved' and source.get('production_approved') is not True:
@@ -74,8 +164,8 @@ def approved_evidence(manifest, row, feature):
     return {**result, 'expires': expires}
 
 
-def project(manifest, row, asset_dir):
-    allow, expires = rights(manifest, row)
+def project(manifest, row, asset_dir, *, now=None):
+    allow, expires = rights(manifest, row, now=now)
     market = row.get('market', 'sale')
     required = {'internet', 'price'} | ({'sold_search'} if market == 'sold' else set())
     if (row.get('withdrawn') or market not in {'sale', 'rent', 'sold'}
@@ -97,6 +187,10 @@ def project(manifest, row, asset_dir):
     for key, types in field_types.items():
         if key in allow and type(row.get(key)) in types:
             home[key] = row[key]
+    if 'status' in allow and 'mls_status_label' in row:
+        home['status'] = row['mls_status_label']
+    if 'updated' in home and row.get('inventory_stale'):
+        home['inventory_stale'] = True
     if 'property_type' in home:
         value = home.pop('property_type')
         label = property_type_label(value)
@@ -216,6 +310,10 @@ def project(manifest, row, asset_dir):
             if recommendation and recommendation_expires > utcnow():
                 home['recommendation'] = recommendation
                 home['recommendation_expires'] = recommendation_expires
+    if market == 'sale' and manifest.get('publish_operator_renovation_estimates') is True:
+        if isinstance(assessment := row.get('operator_flip_assessment'), dict):
+            if assessment.get('method') != LOCAL_ESTIMATE_METHOD or {'address', 'media'} <= allow:
+                project_operator_assessment(home, expires, assessment)
     return (home, expires), assets
 
 

@@ -25,3 +25,4 @@ client_*.apps.googleusercontent.com.plist
 *.xcuserstate
 xcuserdata/
 /data_service/buyer.env
+/data_service/buyer-atlas-staging.env

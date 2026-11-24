@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from itertools import product
-from math import asin, cos, radians, sin, sqrt
+from math import asin, cos, isfinite, radians, sin, sqrt
 
 SOURCE_TYPES = {
     'model': 'Model estimate',
@@ -367,6 +367,35 @@ def detail_analysis(home, args):
 
 ASSESSMENT_NUMBERS = ('resale_low', 'resale_midpoint', 'resale_high', 'renovation_low',
                       'renovation_high', 'hoa_monthly')
+
+
+def saved_flip_breakdown(assessment, asking):
+    """Use the original Flip Recommendation assumptions for a saved assessment."""
+    keys = ('resale_midpoint', 'renovation_low', 'renovation_high', 'hoa_monthly')
+    values = [assessment.get(key) for key in keys]
+    if any(type(value) not in (int, float) or not isfinite(value) or value < 0 for value in values):
+        return None
+    resale, low, high, hoa = values
+    resale_low = assessment.get('resale_low') or resale
+    resale_high = assessment.get('resale_high') or resale
+    if (any(type(value) not in (int, float) or not isfinite(value) for value in (resale_low, resale_high))
+            or not 0 < resale_low <= resale <= resale_high or high < low):
+        return None
+
+    def ceiling(repairs, resale_value):
+        return (resale_value * .935 - repairs - hoa * 10) / 1.1025
+
+    repairs = (low + high) / 2
+    offer = ceiling(repairs, resale)
+    lower = ceiling(high, resale_low)
+    if lower <= 0:
+        return None
+    return {'offer': offer, 'low': lower, 'high': ceiling(low, resale_high),
+            'gap': float(asking or 0) - offer,
+            'lines': [('Property purchased', -offer), ('Purchase closing costs', -offer * .01),
+                      ('Renovations', -repairs), ('Cost of money', -offer * .1 * 10 / 12),
+                      ('Property tax', -offer * .011 * 10 / 12), ('HOA carrying cost', -hoa * 10),
+                      ('Sale closing costs', -resale * .065), ('Expected resale', resale), ('Estimated result', 0)]}
 
 
 def purchase_recommendation(home, reviewed_assessment=None):

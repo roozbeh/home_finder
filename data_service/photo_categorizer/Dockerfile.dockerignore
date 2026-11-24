@@ -1,0 +1,7 @@
+**
+!photo_categorizer/
+!photo_categorizer/*.py
+!photo_categorizer/requirements.txt
+!flip_ui/
+!flip_ui/buyer_media.py
+!flip_ui/buyer_photo_labels.py

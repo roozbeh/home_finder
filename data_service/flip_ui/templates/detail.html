@@ -18,7 +18,7 @@
     {% if session.get('flip_ui_role') == 'admin' %}<form action="{{ url_for('save_label', pair_key=flip.pair_key) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button name="label" value="success_flip" class="button success" type="submit">Mark success flip</button><button name="label" value="failed_flip" class="button danger" type="submit">Mark failed flip</button><button name="label" value="unlabeled" class="button ghost" type="submit">Clear label</button></form>{% else %}<span class="demo-label-note">Read-only demo</span>{% endif %}
   </section>
   {% if insight %}
-  {% if session.get('flip_ui_role') == 'admin' %}<p><a href="{{ url_for('analysis_review.outcome', pair_key=flip.pair_key) }}">Record verified project costs</a></p>{% endif %}
+  {% if session.get('flip_ui_role') == 'admin' and not buyer_atlas_staging %}<p><a href="{{ url_for('analysis_review.outcome', pair_key=flip.pair_key) }}">Record verified project costs</a></p>{% endif %}
   <section class="financial-review">
     <div class="insight-financials">
       <div class="insight-financials-heading"><div><h3>Estimated all-in result</h3><p>Uses observed MLS data and the assumptions below.</p></div><strong class="{{ 'negative' if insight.financials.result_midpoint < 0 else 'positive' }}">{{ insight.financials.result_midpoint|money }}</strong></div>

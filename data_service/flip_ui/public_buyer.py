@@ -130,19 +130,36 @@ def register_public(app, admin_required, validate_csrf):
     mode = setting('BUYER_MODE', 'approved')
     if mode not in {'preview', 'approved'}:
         raise RuntimeError('Invalid BUYER_MODE')
-    identity = identity_for(mode)
     if mode == 'approved' and (len(app.secret_key or '') < 32 or not app.config['SESSION_COOKIE_SECURE']):
         raise RuntimeError('Approved buyer mode requires a production secret and secure cookies')
-    catalog = Catalog(setting('BUYER_CATALOG', str(DEFAULT_DATA / 'catalog.sqlite')))
-    inbox = Inbox(setting('BUYER_SUBMISSIONS', str(DEFAULT_DATA / 'submissions.sqlite')))
-    # Lazy initialization keeps legacy deployments and catalog-only requests independent of inbox disk.
+    atlas_staging = setting('BUYER_ATLAS_STAGING') == 'true'
+    app.config['BUYER_ATLAS_STAGING'] = atlas_staging
+    if atlas_staging:
+        if mode != 'approved':
+            raise RuntimeError('Atlas staging requires approved MLS display mode')
+        from buyer_atlas import AtlasCatalog
+        from pymongo.errors import PyMongoError
+
+        catalog = AtlasCatalog.from_environment(
+            setting('BUYER_ATLAS_URI'), setting('BUYER_ATLAS_POLICY'), setting('BUYER_PUBLIC_ID_KEY'),
+        )
+        identity = inbox = None
+
+        @bp.errorhandler(PyMongoError)
+        def atlas_unavailable(error):
+            app.logger.warning('Atlas property read failed: %s', type(error).__name__)
+            return 'Property listings are temporarily unavailable.', 503
+    else:
+        catalog = Catalog(setting('BUYER_CATALOG', str(DEFAULT_DATA / 'catalog.sqlite')))
+        inbox = Inbox(setting('BUYER_SUBMISSIONS', str(DEFAULT_DATA / 'submissions.sqlite')))
+        identity = identity_for(mode)
+        app.extensions['buyer_inbox'] = inbox
     app.extensions['buyer_catalog'] = catalog
-    app.extensions['buyer_inbox'] = inbox
     app.config.setdefault('MAX_CONTENT_LENGTH', 32 * 1024)
 
     @bp.app_context_processor
     def buyer_context():
-        return {'buyer_mode': mode, 'buyer_identity': identity}
+        return {'buyer_mode': mode, 'buyer_identity': identity, 'buyer_atlas_staging': atlas_staging}
 
     @bp.after_request
     def control_cache(response):
@@ -152,7 +169,7 @@ def register_public(app, admin_required, validate_csrf):
         response.headers['Referrer-Policy'] = (
             'strict-origin' if request.endpoint == 'buyer.homes' else 'no-referrer'
         )
-        if mode == 'preview':
+        if mode == 'preview' or atlas_staging:
             response.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive'
         return response
 
@@ -163,6 +180,8 @@ def register_public(app, admin_required, validate_csrf):
         return home
 
     def track(home, event, entry):
+        if inbox is None:
+            return
         try:
             inbox.initialize()
             inbox.event(mode, home, event, entry)
@@ -237,6 +256,8 @@ def register_public(app, admin_required, validate_csrf):
         photo = url_for('buyer.media', home_id=home_id, media_id=home['photos'][0]) if home['photos'] else None
         return jsonify(label=home['location'], locality=home.get('locality'), price=home['price'],
                        market=home.get('market', 'sale'), photo=photo, fictional=home.get('preview', False),
+                       **({'status': home.get('status'), 'last_checked': home['updated']}
+                          if home.get('inventory_stale') else {}),
                        url=listing_url(home_id, filter_query(filters, include_page=True)),
                        facts={key: home[key] for key in ('beds', 'baths', 'sqft', 'property_type', 'days_on_market')
                               if key in home})
@@ -335,6 +356,8 @@ def register_public(app, admin_required, validate_csrf):
     def inquiry(home_id, kind):
         if kind not in {'contact', 'request-tour'}:
             abort(404)
+        if inbox is None:
+            abort(410)
         home = home_or_404(home_id)
         if home.get('market') == 'sold':
             abort(404)
@@ -342,11 +365,15 @@ def register_public(app, admin_required, validate_csrf):
 
     @bp.route('/agents/partner', methods=['GET', 'POST'])
     def partner():
+        if inbox is None:
+            abort(410)
         return handle_form('partner')
 
     @bp.get('/admin/leads')
     @admin_required
     def leads():
+        if inbox is None:
+            abort(410)
         inbox.initialize()
         return render_template('buyer_inbox.html', title='Buyer inquiries', rows=inbox.queue(mode, False),
                                activity=inbox.activity(mode))
@@ -354,12 +381,16 @@ def register_public(app, admin_required, validate_csrf):
     @bp.get('/admin/partners')
     @admin_required
     def partners():
+        if inbox is None:
+            abort(410)
         inbox.initialize()
         return render_template('buyer_inbox.html', title='Partner applications', rows=inbox.queue(mode, True))
 
     @bp.route('/admin/submissions/<submission_id>', methods=['GET', 'POST'])
     @admin_required
     def record(submission_id):
+        if inbox is None:
+            abort(410)
         inbox.initialize()
         row = inbox.detail(mode, submission_id)
         if not row:

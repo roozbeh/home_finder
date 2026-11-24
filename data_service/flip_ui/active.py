@@ -3,6 +3,7 @@ import math
 from collections import defaultdict
 from flask import Blueprint, render_template, request, abort
 
+from buyer_analysis import saved_flip_breakdown
 from mls_geography import BAY_COUNTIES
 
 CANDIDATES = {'SF426123960':1417626,'ML82065431':1450312,'41149750':1476152,'BA326084425':794430,'CRIV26238559':1085427,'CRSN26222098':1096760,'41149039':1278476,'ML82066483':1234969,'41152317':1133491,'BA326091746':524948}
@@ -13,25 +14,6 @@ def renovation_bullets(assessment):
         'area': observation.get('area') or 'Other work',
         'detail': observation.get('detail') or '',
     } for observation in assessment.get('observations', []) if isinstance(observation, dict)]
-
-
-def purchase_recommendation(assessment, asking):
-    # Use assessed values only: the unadjusted candidate screen is not an ARV.
-    keys = ('resale_midpoint','renovation_low','renovation_high','hoa_monthly')
-    if any(not isinstance(assessment.get(k),(int,float)) or isinstance(assessment.get(k),bool) or not math.isfinite(assessment[k]) or assessment[k]<0 for k in keys):
-        return None
-    resale, low, high, hoa = (assessment[k] for k in keys)
-    if resale <= 0 or high < low: return None
-    def ceiling(repairs, resale_value=resale): return (resale_value*.935-repairs-hoa*10)/1.1025
-    resale_low = assessment.get('resale_low') or resale
-    resale_high = assessment.get('resale_high') or resale
-    offer = ceiling((low+high)/2)
-    if ceiling(high,resale_low)<=0: return None
-    return {'offer':offer, 'low':ceiling(high,resale_low),'high':ceiling(low,resale_high),'gap':float(asking or 0)-offer,
-            'lines':[('Property purchased',-offer),('Purchase closing costs',-offer*.01),
-            ('Renovations',-(low+high)/2),('Cost of money',-offer*.1*10/12),
-            ('Property tax',-offer*.011*10/12),('HOA carrying cost',-hoa*10),
-            ('Sale closing costs',-resale*.065),('Expected resale',resale),('Estimated result',0)]}
 
 
 def profit_at_asking(assessment, asking):
@@ -125,7 +107,7 @@ def register_active(app, dbs, signed_in, listing_view, demo_viewer):
             room_insights[key].append(observation)
             groups.setdefault(key,[])
         hoa=(doc.get('details') or {}).get('HOA_FEE')
-        recommendation = purchase_recommendation(assessment, doc.get('LIST_PRICE'))
+        recommendation = saved_flip_breakdown(assessment, doc.get('LIST_PRICE'))
         return render_template('active_detail.html',listing=listing,doc=doc,groups=dict(groups),assessment=assessment,comparison=CANDIDATES.get(listing_id),hoa=hoa,recommendation=recommendation,room_insights=dict(room_insights),renovation_items=renovation_bullets(assessment))
 
     @bp.get('/admin/comparable/<listing_id>')

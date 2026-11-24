@@ -451,7 +451,10 @@ def login():
             session.clear()
             session["flip_ui_admin"] = True
             session["flip_ui_role"] = "admin"
-            return redirect(next_url or url_for("flip_list" if mongo is not None else "buyer.leads"))
+            fallback = "flip_list" if mongo is not None else (
+                "buyer.homes" if app.config["BUYER_ATLAS_STAGING"] else "buyer.leads"
+            )
+            return redirect(next_url or url_for(fallback))
         else:
             error = "Incorrect username or password."
     return render_template("login.html", error=error, next_url=next_url or "")
@@ -670,13 +673,14 @@ def save_label(pair_key: str):
 from public_buyer import register_public
 register_public(app, admin_required, validate_csrf)
 
-from buyer_analysis_review import register_analysis_review
-from buyer_supply import register_supply
-from buyer_worker import register_worker
+if not app.config["BUYER_ATLAS_STAGING"]:
+    from buyer_analysis_review import register_analysis_review
+    from buyer_supply import register_supply
+    from buyer_worker import register_worker
 
-register_analysis_review(app, admin_required, validate_csrf)
-register_supply(app, admin_required, validate_csrf)
-register_worker(app, admin_required, validate_csrf)
+    register_analysis_review(app, admin_required, validate_csrf)
+    register_supply(app, admin_required, validate_csrf)
+    register_worker(app, admin_required, validate_csrf)
 
 from active import register_active
 register_active(app, _dbs, signed_in_required, listing_view, demo_viewer)

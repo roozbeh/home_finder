@@ -15,9 +15,12 @@
   <div class="card-content">
     <strong>{{ money(home.price) }}{% if home.market == 'rent' %}<small> / mo</small>{% endif %}</strong><h3>{{ home.location }}</h3>
     {{ facts(home) }}
+    {% if home.inventory_stale %}<p class="availability">{% if home.status %}{{ home.status }} · {% endif %}Inventory last checked <time datetime="{{ home.updated }}">{{ home.updated[:10] }}</time></p>{% endif %}
     {% set budget = home.scopes.budgets[0] if home.scopes and home.scopes.budgets else none %}
     {% if budget and budget.low is not none %}
     <p class="availability">{{ 'Partial scope' if home.scopes.partial else 'Renovation' }} · {{ money(budget.low) }}–{{ money(budget.high) }}</p>
+    {% elif home.operator_renovation_estimate and home.operator_renovation_estimate.low is number %}
+    <p class="availability">AI renovation estimate · {{ money(home.operator_renovation_estimate.low) }}–{{ money(home.operator_renovation_estimate.high) }}</p>
     {% else %}<p class="availability">Renovation estimate unavailable</p>{% endif %}
     <a class="text-action" href="{{ link }}">View home</a>
   </div>

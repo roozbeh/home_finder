@@ -16,21 +16,28 @@ import requests
 from PIL import Image
 from pymongo import MongoClient
 
+from buyer_media import mls_photo_variant
 from categorize_photos import FLIPDB_DATABASE, MONGO_DB, MONGO_URI, OLLAMA_URL, jpeg_source
+from gallery_photo_labels import label_priority, photo_id_for, store_gallery_labels
 from photo_inference import Inference, InferenceError
 
 STAGES = (
     ('active', ('ACTV', 'NEW', 'BOMK', 'PCH')),
     ('sold', ('SLD',)),
 )
+FLIP_STAGE = 'flips'
+REPORT_STAGES = ((FLIP_STAGE, None), *STAGES)
 METHOD = 'moondream_caption_rules_v1'
+LABEL_SOURCE = 'moondream-mls-backfill'
 RESULT_COLLECTION = 'mls_photo_classifications'
 JOB_COLLECTION = 'mls_photo_backfill_jobs'
 PROGRESS_SECONDS = 15
 PUBLIC_CHECK_DAYS = 90
 RETRY_DELAYS = (2, 8)
 PROMPT = 'Describe this photo in one sentence.'
-PROJECTION = {'LISTING_ID': 1, 'SOURCE_MLS': 1, 'photos': 1, 'details.PRIMARY_PHOTO_URI': 1}
+PROJECTION = {'LISTING_ID': 1, 'SOURCE_MLS': 1, 'RAW_STATUS': 1, 'photos': 1,
+              'details.PRIMARY_PHOTO_URI': 1, 'gallery_photo_labels': 1}
+SAVE_BATCH_SIZE = 8
 MEDIA_HOSTS = frozenset({'media.mlslmedia.com', 'media.crmls.org'})
 MEDIA_SUFFIXES = ('.cdn-connectmls.com', '.rapmls.com')
 LABELS = (
@@ -76,6 +83,29 @@ def photo_references(listing):
     return urls, len(raw) - len(urls)
 
 
+def classification_urls(urls):
+    """Infer once per stable gallery photo, trying the full-size reference first."""
+    photos = {}
+    for url in urls:
+        photo_id = photo_id_for(url)
+        if photo_id is None:
+            continue
+        _, preferred = mls_photo_variant(url)
+        variants = photos.setdefault(photo_id, [])
+        if preferred:
+            variants.insert(0, url)
+        else:
+            variants.append(url)
+    return photos
+
+
+def reusable_photo_ids(listing, photos, model):
+    return {row['photo_id'] for row in listing.get('gallery_photo_labels') or ()
+            if isinstance(row, dict) and row.get('category') and row.get('photo_id') in photos
+            and (label_priority(row) > 2
+                 or (row.get('model') == model and row.get('method') == METHOD))}
+
+
 def infer_label(caption):
     if re.search(LABELS[0][1], caption, flags=re.I):
         return 'floor_plan'
@@ -115,9 +145,21 @@ def read_image(http, url):
         return jpeg_source(bytes(chunks))
 
 
-def listing_totals(source):
-    return {stage: source.count_documents({'RAW_STATUS': {'$in': list(statuses)}}, maxTimeMS=25000)
-            for stage, statuses in STAGES}
+def flip_listing_ids(source, pairs):
+    ids = {
+        listing_id for pair in pairs.find({}, {'_id': 0, 'buy_mls': 1, 'sell_mls': 1})
+        for key in ('buy_mls', 'sell_mls')
+        if isinstance((listing_id := pair.get(key)), str) and listing_id
+    }
+    if not ids:
+        return []
+    return [row['_id'] for row in source.find({'LISTING_ID': {'$in': sorted(ids)}}, {'_id': 1}).sort('_id', 1)]
+
+
+def listing_totals(source, flip_ids):
+    return {FLIP_STAGE: len(flip_ids),
+            **{stage: source.count_documents({'RAW_STATUS': {'$in': list(statuses)}}, maxTimeMS=25000)
+               for stage, statuses in STAGES}}
 
 
 def public_check_timestamp(value):
@@ -157,10 +199,10 @@ def stage_candidates(source, query, priority, start):
 
 
 def gallery_progress(source, results, model, statuses, checkpoint):
-    query = {'RAW_STATUS': {'$in': list(statuses)}}
+    query = {'RAW_STATUS': {'$in': list(statuses)}} if statuses else {}
     if 'current_id' in checkpoint:
         query['_id'] = checkpoint['current_id']
-    elif 'priority_index' in checkpoint:
+    elif not statuses or 'priority_index' in checkpoint:
         return ''
     elif 'last_id' in checkpoint:
         query['_id'] = {'$gt': checkpoint['last_id']}
@@ -168,13 +210,20 @@ def gallery_progress(source, results, model, statuses, checkpoint):
     if listing is None:
         return ''
     urls, _ = photo_references(listing)
+    photo_ids = classification_urls(urls)
+    labels = {row['photo_id']: row for row in listing.get('gallery_photo_labels') or ()
+              if isinstance(row, dict) and row.get('category') and row.get('photo_id') in photo_ids}
     keys = [photo_key(listing['_id'], url, model) for url in urls]
-    records = list(results.find({'_id': {'$in': keys}}, {'result': 1, 'classified_at': 1}))
-    classified = sum(record.get('result') == 'classified' for record in records)
+    # Show the old worker's current partial gallery before the cutover too.
+    records = list(results.find({'_id': {'$in': keys}}, {'result': 1, 'classified_at': 1})) if not labels else []
+    classified = len(labels) + sum(record.get('result') == 'classified' for record in records)
     unavailable = sum(record.get('result') == 'unavailable' for record in records)
-    latest = max((record['classified_at'] for record in records if 'classified_at' in record), default=None)
+    timestamps = (public_check_timestamp(record.get('classified_at'))
+                  for record in (*labels.values(), *records))
+    latest = max((stamp for stamp in timestamps if stamp is not None), default=None)
     label = 'current gallery' if 'current_id' in checkpoint else 'next gallery'
-    line = (f' · {label} {classified:,}/{len(urls):,} photos classified'
+    total = len(urls) if records else len(photo_ids)
+    line = (f' · {label} {classified:,}/{total:,} photos classified'
             f' · {unavailable:,} unavailable')
     if latest:
         line += f' · last photo saved {latest:%H:%M:%S} UTC'
@@ -182,14 +231,14 @@ def gallery_progress(source, results, model, statuses, checkpoint):
 
 
 def show_progress(jobs, model, totals, *, live_gallery=None, current_stage=None, gallery=None):
-    job_ids = {stage: f'{METHOD}:{model}:{stage}' for stage, _ in STAGES}
+    job_ids = {stage: f'{METHOD}:{model}:{stage}' for stage, _ in REPORT_STAGES}
     checkpoints = {job['_id']: job for job in jobs.find(
         {'_id': {'$in': list(job_ids.values())}},
         {'state': 1, 'counts': 1, 'last_id': 1, 'current_id': 1, 'priority_index': 1, 'priority_total': 1,
          'updated_at': 1},
     )}
     lines = [now().strftime('%Y-%m-%d %H:%M:%S UTC')]
-    for stage, statuses in STAGES:
+    for stage, statuses in REPORT_STAGES:
         checkpoint = checkpoints.get(job_ids[stage], {})
         state = checkpoint.get('state', 'pending')
         counts = checkpoint.get('counts', {})
@@ -201,7 +250,8 @@ def show_progress(jobs, model, totals, *, live_gallery=None, current_stage=None,
                 f'{counts.get("classified", 0):,} photos classified in scanned listings · '
                 f'{counts.get("cached", 0):,} reused · {counts.get("unavailable", 0):,} unavailable')
         if checkpoint.get('priority_total'):
-            line += (f' · fresh display checks {checkpoint["priority_index"]:,}'
+            priority_label = 'FlipDB priority' if stage == FLIP_STAGE else 'fresh display checks'
+            line += (f' · {priority_label} {checkpoint["priority_index"]:,}'
                      f'/{checkpoint["priority_total"]:,} processed')
         if stage == current_stage and gallery:
             line += f' · current gallery {gallery[0]:,}/{gallery[1]:,} photos checked'
@@ -239,21 +289,24 @@ def caption_with_retry(engine, image):
             sleep(delay)
 
 
-def save_photo(results, http, engine, identity, record):
-    started = perf_counter()
+def classify_photo(http, engine, photo_id, urls, model):
+    for url in urls:
+        try:
+            image = download_with_retry(http, url)
+        except (requests.RequestException, OSError, ValueError, Image.DecompressionBombError):
+            continue
+        break
+    else:
+        return None
     try:
-        image = download_with_retry(http, record['photo_url'])
         caption = caption_with_retry(engine, image)
-        record.update(result='classified', category=infer_label(caption), visible_features=caption)
-    except (requests.RequestException, OSError, ValueError, Image.DecompressionBombError) as exc:
-        record.update(result='unavailable', error=type(exc).__name__)
-    results.update_one({'_id': identity}, {'$set': {
-        **record, 'elapsed_seconds': round(perf_counter() - started, 3), 'classified_at': now(),
-    }}, upsert=True)
-    return record['result']
+    except ValueError:
+        return None
+    return {'photo_id': photo_id, 'category': infer_label(caption), 'caption': caption,
+            'model': model, 'method': METHOD, 'source': LABEL_SOURCE, 'classified_at': now()}
 
 
-def parallel_classifier(stack, results, make_engine, workers):
+def parallel_classifier(stack, make_engine, workers):
     clients = SimpleQueue()
     thread = local()
     for _ in range(workers):
@@ -264,64 +317,85 @@ def parallel_classifier(stack, results, make_engine, workers):
     def initialize():
         thread.http, thread.engine = clients.get_nowait()
 
-    def classify(identity, record):
-        return save_photo(results, thread.http, thread.engine, identity, record)
+    def classify(photo_id, urls, model):
+        return classify_photo(thread.http, thread.engine, photo_id, urls, model)
 
     pool = ThreadPoolExecutor(max_workers=workers, initializer=initialize)
     stack.callback(pool.shutdown, cancel_futures=True)
     return classify, pool
 
 
-def run_stage(source, results, jobs, classify, pool, model, stage, statuses, totals, public_check_days):
+def run_stage(source, jobs, classify, pool, model, stage, statuses, totals, public_check_days, *, flip_ids=()):
     job_id = f'{METHOD}:{model}:{stage}'
     previous = jobs.find_one({'_id': job_id}) or {}
     resuming = previous.get('state') == 'running'
-    query = {'RAW_STATUS': {'$in': list(statuses)}}
-    if resuming and previous.get('last_id'):
+    query = {'RAW_STATUS': {'$in': list(statuses)}} if statuses else {}
+    if statuses and resuming and previous.get('last_id'):
         query['_id'] = {'$gt': previous['last_id']}
     update = {'$set': {'state': 'running', 'updated_at': now()}}
     if not resuming:
         update['$unset'] = {'last_id': '', 'counts': ''}
     priority = []
     priority_index = 0
-    if stage == 'active':
+    if stage in (FLIP_STAGE, 'active'):
         if resuming and 'priority_queue' in previous:
             priority = previous['priority_queue']
             priority_index = previous['priority_index']
+        elif stage == FLIP_STAGE:
+            priority = list(flip_ids)
         else:
             priority = fresh_display_checks(source, query, public_check_days)
         update['$set'].update(priority_queue=priority, priority_index=priority_index, priority_total=len(priority))
     jobs.update_one({'_id': job_id}, update, upsert=True)
     show_progress(jobs, model, totals)
     next_report = perf_counter() + PROGRESS_SECONDS
-    for listing_id, position in stage_candidates(source, query, priority, priority_index):
-        listing = source.find_one({'_id': listing_id, 'RAW_STATUS': {'$in': list(statuses)}}, PROJECTION)
+    candidates = (stage_candidates(source, query, priority, priority_index) if statuses else
+                  ((listing_id, {'priority_index': index})
+                   for index, listing_id in enumerate(priority[priority_index:], start=priority_index + 1)))
+    for listing_id, position in candidates:
+        listing_query = {'_id': listing_id}
+        if statuses:
+            listing_query['RAW_STATUS'] = {'$in': list(statuses)}
+        listing = source.find_one(listing_query, PROJECTION)
         if listing is None:
             jobs.update_one({'_id': job_id}, {'$set': position, '$unset': {'current_id': ''}})
             continue
         jobs.update_one({'_id': job_id}, {'$set': {'current_id': listing_id, 'updated_at': now()}})
         urls, skipped = photo_references(listing)
-        # Bulk lookups use the _id index and only fetch successful checkpoint keys.
-        keys = {url: photo_key(listing['_id'], url, model) for url in urls}
-        complete = {row['_id'] for row in results.find({
-            '_id': {'$in': list(keys.values())}, 'result': 'classified',
-        }, {'_id': 1})}
+        photos = classification_urls(urls)
+        complete = reusable_photo_ids(listing, photos, model)
         counts = dict(listings=1, classified=0, cached=len(complete), unavailable=0, rejected_refs=skipped)
-        base = {'listing_id': listing.get('LISTING_ID'), 'source_mls': listing.get('SOURCE_MLS'),
-                'listing_object_id': listing['_id'], 'market_stage': stage, 'model': model, 'method': METHOD}
-        pending = [(keys[url], {**base, 'photo_url': url, 'photo_index': index})
-                   for index, url in enumerate(urls) if keys[url] not in complete]
+        pending = [(photo_id, variants, model) for photo_id, variants in photos.items() if photo_id not in complete]
         if pool is None:
             outcomes = (classify(*photo) for photo in pending)
         else:
             futures = [pool.submit(classify, *photo) for photo in pending]
             outcomes = (future.result() for future in as_completed(futures))
-        for checked, outcome in enumerate(outcomes, start=counts['cached'] + 1):
-            counts[outcome] += 1
-            if perf_counter() >= next_report:
-                jobs.update_one({'_id': job_id}, {'$set': {'updated_at': now()}})
-                show_progress(jobs, model, totals, current_stage=stage, gallery=(checked, len(urls)))
-                next_report = perf_counter() + PROGRESS_SECONDS
+        labels = []
+
+        def flush_labels():
+            if not labels:
+                return
+            batch = labels[:]
+            labels.clear()
+            if not store_gallery_labels(source, listing, batch):
+                raise RuntimeError('Gallery changed while classifying; resume from the saved listing checkpoint')
+
+        try:
+            for checked, label in enumerate(outcomes, start=counts['cached'] + 1):
+                if label is not None:
+                    labels.append(label)
+                    counts['classified'] += 1
+                else:
+                    counts['unavailable'] += 1
+                if len(labels) >= SAVE_BATCH_SIZE:
+                    flush_labels()
+                if perf_counter() >= next_report:
+                    jobs.update_one({'_id': job_id}, {'$set': {'updated_at': now()}})
+                    show_progress(jobs, model, totals, current_stage=stage, gallery=(checked, len(photos)))
+                    next_report = perf_counter() + PROGRESS_SECONDS
+        finally:
+            flush_labels()
         jobs.update_one({'_id': job_id}, {
             '$set': {**position, 'updated_at': now()},
             '$unset': {'current_id': ''},
@@ -364,7 +438,8 @@ def main():
         db = mongo[FLIPDB_DATABASE]
         results, jobs = db[RESULT_COLLECTION], db[JOB_COLLECTION]
         if args.status:
-            totals = listing_totals(source)
+            flip_ids = flip_listing_ids(source, db.flipdb)
+            totals = listing_totals(source, flip_ids)
             show_progress(jobs, args.model, totals, live_gallery=(source, results))
             if args.watch:
                 try:
@@ -379,26 +454,31 @@ def main():
         engine = make_engine()
         stack.callback(engine.session.close)
         engine.verify_vision()
-        totals = listing_totals(source)
+        flip_ids = flip_listing_ids(source, db.flipdb)
+        totals = listing_totals(source, flip_ids)
         if args.dry_run:
-            for stage, count in totals.items():
-                print(f'{stage}: {count:,} listings')
+            print(f'flips: {totals[FLIP_STAGE]:,} distinct purchase and resale listings, processed first')
+            for stage, _ in STAGES:
+                print(f'{stage}: {totals[stage]:,} listings')
             active = {'RAW_STATUS': {'$in': list(STAGES[0][1])}}
             print(f'active: {len(fresh_display_checks(source, active, args.public_check_days)):,} fresh display checks '
                   f'within {args.public_check_days} days before excluding checkpointed listings')
             print(f'{args.model} verified. No inference or database writes.')
             return
         if args.workers == 1:
-            classify = partial(save_photo, results, stack.enter_context(requests.Session()), engine)
+            classify = partial(classify_photo, stack.enter_context(requests.Session()), engine)
             pool = None
         else:
-            classify, pool = parallel_classifier(stack, results, make_engine, args.workers)
-        print(f'{args.model}: up to {args.workers} photo requests in flight', flush=True)
+            classify, pool = parallel_classifier(stack, make_engine, args.workers)
+        print(f'{args.model}: up to {args.workers} photo requests in flight · '
+              f'{len(flip_ids):,} FlipDB listings first · saving labels in {source.full_name}', flush=True)
         completed_active = jobs.find_one({'_id': f'{METHOD}:{args.model}:active', 'state': 'complete'}, {'_id': 1})
         running_sold = jobs.find_one({'_id': f'{METHOD}:{args.model}:sold', 'state': 'running'}, {'_id': 1})
         stages = STAGES[1:] if completed_active and running_sold else STAGES
+        run_stage(source, jobs, classify, pool, args.model, FLIP_STAGE, None, totals,
+                  args.public_check_days, flip_ids=flip_ids)
         for stage, statuses in stages:
-            run_stage(source, results, jobs, classify, pool, args.model, stage, statuses, totals, args.public_check_days)
+            run_stage(source, jobs, classify, pool, args.model, stage, statuses, totals, args.public_check_days)
 
 
 if __name__ == '__main__':

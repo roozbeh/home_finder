@@ -156,6 +156,76 @@ class BuyerJourneyTest(unittest.TestCase):
         evidence['allow']['sold_comps'] = True
         assessment['created_at'] += timedelta(seconds=1)
         self.assertNotIn('reviewed_purchase_assessment', resulting_row())
+        assessment.update(method='active_listing_proposed_visible_work', renovation_low=35_000, renovation_high=65_000)
+        saved = manifest_for([row], config, b'test-key', saved_assessments={'M1': assessment},
+                             publish_operator_estimates=True, now=now)['homes'][0]
+        self.assertEqual(saved['operator_flip_assessment']['renovation_low'], 35_000)
+        self.assertEqual(saved['operator_flip_assessment']['renovation_high'], 65_000)
+        self.assertNotIn('reviewed_purchase_assessment', saved)
+
+    def test_local_estimate_shows_rooms_and_work_without_a_recommendation(self):
+        from renovation_drafts import METHOD
+
+        row = self.manifest['homes'][0]
+        grants = ('derived', 'valuation', 'sold_comps', 'address', 'media')
+        for rules in (row['policy'], self.manifest['sources']['fixture']):
+            rules['allow'].update(dict(zip(grants, (False, False, False, True, True))))
+        row['operator_flip_assessment'] = {
+            'method': METHOD, 'state': 'partial', 'renovation_low': 380, 'renovation_high': 1150,
+            'area_estimates': {
+                'bathroom': {'label': 'Bathrooms', 'condition': 'The tile can stay.', 'items': [
+                    {'task': 'Replace toilet in place', 'detail': 'Replace the damaged toilet.',
+                     'low': 380, 'high': 1150, 'evidence': PRIVATE},
+                ], 'low': 380, 'high': 1150},
+                'kitchen': {'label': 'Kitchen', 'partial': True,
+                            'items': [{'task': 'Replace countertop', 'detail': 'Measure the counter.'}]},
+            },
+        }
+        self.manifest['publish_operator_renovation_estimates'] = True
+        publish(self.manifest, self.path, ASSETS)
+        body = self.client.get(f'/homes/{FAIRFIELD}').data
+        for text in (b'Partial AI renovation estimate', b'Replace toilet in place', b'Kitchen', b'Unpriced'):
+            self.assertIn(text, body)
+        self.assertNotIn(b'Recommended purchase price', body)
+        self.assertNotIn(PRIVATE.encode(), body)
+
+    def test_operator_renovation_estimate_is_public_without_the_resale_package(self):
+        row = self.manifest['homes'][0]
+        row['policy'] = deepcopy(row['policy'])
+        for field in ('ai', 'derived', 'valuation', 'sold_comps'):
+            row['policy']['allow'][field] = False
+            self.manifest['sources']['fixture']['allow'][field] = False
+        row['operator_flip_assessment'] = {'renovation_low': 35_000, 'renovation_high': 65_000}
+        path = f'/homes/{FAIRFIELD}'
+        publish(self.manifest, self.path, ASSETS)
+        self.assertNotIn(b'$35,000', self.client.get(path).data)
+        self.manifest['publish_operator_renovation_estimates'] = True
+        publish(self.manifest, self.path, ASSETS)
+        self.assertIn(b'AI renovation estimate', self.client.get('/homes').data)
+        body = self.client.get(path).data
+        self.assertIn('$35,000–$65,000'.encode(), body)
+        self.assertNotIn(b'Recommended purchase price', body)
+        self.assertNotIn(PRIVATE.encode(), body)
+        row['operator_flip_assessment'].update(
+            resale_low=519_000, resale_midpoint=545_000, resale_high=568_000, hoa_monthly=0,
+            observations=[{'area': 'Roof', 'detail': f'Private remarks contain {PRIVATE}. '
+                                                    'Replace the asphalt shingles for $8.5k–$12k.'}],
+        )
+        publish(self.manifest, self.path, ASSETS)
+        complete = self.client.get(path).data
+        for item in ('$416,848', '$381,193–$449,959', 'Roof: $8,500–$12,000', 'Expected resale',
+                     '$545,000', 'Replace the asphalt shingles'):
+            self.assertIn(item.encode(), complete)
+        self.assertNotIn(PRIVATE.encode(), complete)
+        for empty_panel in (b'Renovation scope', b'Renovation options', b'Comparable sales', b'Similar past projects'):
+            self.assertNotIn(empty_panel, complete)
+        self.assertEqual(self.client.get('/homes/property-type-count?purchase_recommendation=yes').json, {'count': 1})
+        row['operator_flip_assessment']['renovation_high'] = 30_000
+        publish(self.manifest, self.path, ASSETS)
+        self.assertNotIn(b'$35,000', self.client.get(path).data)
+        row['withdrawn'] = True
+        publish(self.manifest, self.path, ASSETS)
+        self.assertEqual(self.client.get(path).status_code, 404)
 
     def test_public_surfaces_and_filters(self):
         for path in ('/', '/homes', f'/homes/{FAIRFIELD}', f'/homes/{PENDING}', f'/homes/{SUPPRESSED}',
@@ -328,6 +398,8 @@ class BuyerJourneyTest(unittest.TestCase):
         path = f'/homes/{FAIRFIELD}'
         first = self.client.get(path)
         self.assertIn(b'$545,000', first.data)
+        self.assertIn(b'Comparable sales', first.data)
+        self.assertIn(b'Similar past projects', first.data)
         comp = self.manifest['sales'][0]
         comp['policy'] = deepcopy(comp['policy'])
         comp['policy']['allow']['sold_comps'] = False
@@ -339,8 +411,10 @@ class BuyerJourneyTest(unittest.TestCase):
         publish(self.manifest, self.path, ASSETS)
         refreshed = self.client.get(path)
         self.assertNotIn(b'$150,000', refreshed.data)
+        self.assertNotIn(b'Comparable sales', refreshed.data)
+        self.assertNotIn(b'Similar past projects', refreshed.data)
         self.assertIn(b'$460,000', refreshed.data)
-        self.assertIn(b'Renovation scope', refreshed.data)
+        self.assertIn(b'Renovation options', refreshed.data)
 
     def test_comp_policy_expires_without_unpublishing_home(self):
         now = datetime.now(timezone.utc)

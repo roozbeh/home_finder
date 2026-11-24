@@ -1,5 +1,45 @@
 {% from 'buyer_components.html' import money %}
 <section class="property-recommendation" aria-labelledby="recommendation-title">
+  {% if recommendation.operator_saved %}
+  <p class="eyebrow">Flip recommendation</p>
+  <h2 id="recommendation-title">Recommended purchase price</h2>
+  <div class="saved-purchase-ceiling">
+    <p class="recommendation-caption">Estimated break-even purchase ceiling</p>
+    <p class="recommendation-amount">{{ money(recommendation.offer) }}</p>
+    <p class="recommendation-range">{{ money(recommendation.low) }}–{{ money(recommendation.high) }}</p>
+    <p class="recommendation-caption">{{ recommendation.hold_months }}-month hold · No profit cushion · AI estimate requires review</p>
+  </div>
+  <p class="saved-asking-gap">Asking {{ money(home.price) }}{% if recommendation.gap %} · {{ money(recommendation.gap|abs) }} {{ 'below' if recommendation.gap > 0 else 'above' }} asking{% endif %}</p>
+  <table class="saved-flip-ledger" aria-label="Costs at the break-even purchase price">
+    <tbody>
+      {% for line in recommendation.ledger %}
+      <tr{% if loop.last %} class="saved-ledger-result"{% endif %}{% if line.label == 'Renovations' and not analysis %} id="renovation"{% endif %}>
+        <th scope="row">{{ line.label }}
+          {% if line.label == 'Renovations' %}
+          {% if recommendation.renovation_items %}
+          <ul class="saved-renovation-items">
+            {% for item in recommendation.renovation_items %}
+            {% set item_label = item.label ~ ': ' ~ money(item.low) ~ '–' ~ money(item.high) %}
+            <li>
+              {% if item.detail %}
+              <details class="saved-work-detail">
+                <summary>{{ item_label }}</summary>
+                <p>{{ item.detail }}</p>
+              </details>
+              {% else %}{{ item_label }}{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          <small>Total range {{ money(recommendation.renovation_range.low) }}–{{ money(recommendation.renovation_range.high) }}. Item ranges may overlap.</small>
+          {% endif %}
+        </th>
+        <td>{{ '−' if line.amount < 0 }}{{ money(line.amount|abs) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
   <h2 id="recommendation-title">Recommended purchase price</h2>
   <p class="recommendation-caption">Estimated break-even price</p>
   <p class="recommendation-amount">{{ money(recommendation.offer) }}</p>
@@ -27,5 +67,6 @@
       {% endfor %}
     </dl>
   </details>
+  {% endif %}
   {% endif %}
 </section>

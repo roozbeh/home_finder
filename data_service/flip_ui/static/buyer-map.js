@@ -80,6 +80,10 @@
     ].filter(Boolean);
     if (facts.length) copy.append(element('p', 'buyer-map-preview-facts', facts.join(' · ')));
     if (listingFacts.length) copy.append(element('p', 'buyer-map-preview-facts', listingFacts.join(' · ')));
+    if (home.last_checked) {
+      const freshness = [home.status, `Inventory last checked ${home.last_checked.slice(0, 10)}`].filter(Boolean);
+      copy.append(element('p', 'buyer-map-preview-facts', freshness.join(' · ')));
+    }
     card.append(photo, copy);
     return card;
   }

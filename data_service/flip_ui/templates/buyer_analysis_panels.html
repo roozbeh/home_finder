@@ -4,17 +4,19 @@
 {% macro facts(row) -%}
   {{ row.sale_date }} · {{ '{:,}'.format(row.sqft) }} sq ft · {{ row.distance }} mi
 {%- endmacro %}
+{% if analysis or (not private_analysis and (home.sales or home.projects)) %}
 <div class="buyer-analysis">
+  {% if analysis %}
   <section id="renovation">
-    <h2>Renovation scope</h2>
-    {% if analysis and analysis.budget.low is not none %}
+    <h2>{{ 'Renovation scope' if private_analysis else 'Renovation options' }}</h2>
+    {% if analysis.budget.low is not none %}
       <p class="analysis-amount">{{ amount(analysis.budget.low) }}–{{ amount(analysis.budget.high) }}</p>
       <p>{{ 'Partial budget for the selected work' if home.scopes.partial else 'Budget for the selected work' }} · Scope {{ home.scopes.version }}</p>
     {% else %}
       <p>Renovation estimate pending review.</p>
     {% endif %}
-    {% if analysis and analysis.errors %}<p role="alert">{{ analysis.errors|join(' ') }}</p>{% endif %}
-    {% if analysis and (home.scopes.options or analysis.scenario) %}
+    {% if analysis.errors %}<p role="alert">{{ analysis.errors|join(' ') }}</p>{% endif %}
+    {% if home.scopes.options or analysis.scenario %}
       <form class="analysis-choices" method="get" action="#renovation">
         {% for key in ['city','market','min_price','max_price','beds','baths','property_type','min_sqft','min_lot','min_year','dom','reduced','auction','bank_owned','photos_only','photo_categories','purchase_recommendation','good_investment','page'] %}
           {% for value in request.args.getlist(key) %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
@@ -34,7 +36,6 @@
         <button type="submit">Update estimate</button>
       </form>
     {% endif %}
-    {% if analysis %}
       {% for room in analysis.budget.rooms %}
       <details class="cost-room">
         <summary><strong>{{ room.room }}</strong><span>{{ amount(room.low) }}–{{ amount(room.high) }} selected work</span></summary>
@@ -59,12 +60,11 @@
       </details>
       {% endif %}
       {% if not private_analysis and buyer_identity %}<p><a href="{{ url_for('buyer.inquiry', home_id=home.id, kind='contact', entry='estimate') }}">Ask about this estimate</a></p>{% endif %}
-    {% endif %}
   </section>
-  {% if not private_analysis %}
+  {% endif %}
+  {% if not private_analysis and home.sales %}
   <section>
     <h2>Comparable sales</h2>
-    {% if home.sales %}
       <p>These nearby closed sales with updated finishes support the modeled resale price.</p>
       <details class="cost-room">
         <summary><strong>{{ home.sales|length }} selected comparable sales</strong></summary>
@@ -72,13 +72,11 @@
           {% for sale in home.sales %}<li><strong>{{ amount(sale.price) }}</strong><br>{{ facts(sale) }}<br><small>{{ sale.reason }}</small></li>{% endfor %}
         </ul>
       </details>
-    {% else %}
-      <p>A resale estimate needs enough eligible sales of similar homes with a documented updated finish.</p>
-    {% endif %}
   </section>
+  {% endif %}
+  {% if not private_analysis and home.projects %}
   <section>
     <h2>Similar past projects</h2>
-    {% if home.projects %}
       <p>Paired purchase and resale records give context about past transactions.</p>
       <details class="cost-room">
         <summary><strong>{{ home.projects|length }} matched {{ 'transaction pair' if home.projects|length == 1 else 'transaction pairs' }}</strong></summary>
@@ -93,9 +91,6 @@
           {% endfor %}
         </ul>
       </details>
-    {% else %}
-      <p>No similar projects with eligible purchase and resale evidence are available here.</p>
-    {% endif %}
   </section>
   {% endif %}
   {% if analysis.scenario %}
@@ -123,3 +118,4 @@
   </section>
   {% endif %}
 </div>
+{% endif %}

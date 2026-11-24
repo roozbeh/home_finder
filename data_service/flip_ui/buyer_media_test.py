@@ -13,6 +13,16 @@ CRMLS_IMAGE = 'https://media.crmls.org/medias/00112233-4455-6677-8899-aabbccddee
 
 
 class BuyerMediaTest(unittest.TestCase):
+    def test_bareis_public_gallery_endpoint(self):
+        photo = ('https://barimedia.rapmls.com/norcalmls/listingpics/bigphoto/2026/11/04/'
+                 '00112233-4455-6677-8899-aabbccddeeff.jpg')
+        self.assertEqual(approved_mls_gallery(photo, [photo]), [(photo, [])])
+        for url in (photo + '?token=private', photo + '#photo', photo.replace('/bigphoto/', '/documents/'),
+                    photo.replace('00112233', 'non-uuid'), photo.replace('https:', 'http:'),
+                    photo.replace('barimedia.rapmls.com', 'barimedia.rapmls.com.example.test')):
+            with self.subTest(url=url):
+                self.assertIsNone(approved_mls_photo_url(url))
+
     def test_extensionless_mls_listings_gallery_urls(self):
         for url in (MLSL_PHOTO, MLSL_PHOTO[:-1] + '65'):
             self.assertEqual(approved_mls_photo_url(url), url)

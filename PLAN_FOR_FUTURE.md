@@ -2,8 +2,14 @@
 
 The buyer UI and private workflows are implemented. The local signed-out buyer preview uses eligible real inventory. The existing external Flip Finder host serves the legacy private workspace. The new buyer site still needs its approved production configuration and external HTTPS acceptance.
 
+## Roozbeh’s TODOs
+
+- [ ] Seek BAREIS MLS approval for Flip Finder’s public IDX display. Ask for the authorized feed or field documentation covering both permission for other brokers to advertise a listing and permission to pass it to the internet. Ask how to interpret the blank `INTERNET_SITES` field in the current feed and how seller opt-outs, address restrictions, and withdrawals are signaled. Use 2988 Orchid (MLS #BA326091746) as the example. [BAREIS IDX setup](https://www.bareis.com/my-bareis/idx-and-website.html)
+- [ ] Confirm public use of the MLS inputs behind the 2988 Orchid analysis. Roozbeh approved publication of his saved AI analysis (MLS #BA326091746, revision `2026-11-18T04:46:39.385000+00:00`). The estimate draws on MLS photo observations and remarks, and the resale forecast cites five closed sales. Record the source permissions for the relevant evidence in the publisher before activating the public review for this revision. [Publisher runbook](data_service/flip_ui/BUYER_PUBLISHER.md)
+
 ## Buyer release
 
+- [ ] Once the BAREIS permission mapping is confirmed, connect it to the buyer publisher. Verify which of the roughly 2,096 active records qualify, test an opt-out and a withdrawal, then confirm that 2988 Orchid appears in the Fairfield houses search under $500,000 if eligible.
 - [ ] Obtain written brokerage approval and source-specific MLS decisions for public listing display, attribution, suppression deadlines, media, sold comparables, valuations and AI use. Record source and listing grants, effective dates, required notices, and refresh deadlines privately. Audit actual feed mappings and source permissions before enabling them. Confirm approved content, processor and historical training rights separately.
 - [ ] Collect verified buyer contact identity, responsible brokerage, license, advertising language, approved intake and retention wording, and notification destination. Configure those values privately. Decide who owns replies, how tours and representation are verified, and how buyer consent is recorded for any later partner introduction.
 - [ ] Repeat the current approved-inventory journey from a fresh signed-out desktop and phone. Verify filters, list/map parity, back navigation, details with and without analysis, private-field suppression, withdrawn media and direct URLs, and the inquiry, tour and partner receipts. Confirm the matching records and status changes in the private queues and denial for signed-out and demo roles.

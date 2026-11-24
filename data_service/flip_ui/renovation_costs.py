@@ -19,13 +19,14 @@ def calculate_budget(items, selections):
             raise ValueError("Every selected item needs a room, task, unit and source")
         try:
             quantity = Decimal(str(item["quantity"]))
+            quantity_high = Decimal(str(item.get("quantity_high", item["quantity"])))
             low = Decimal(str(item["unit_low"]))
             high = Decimal(str(item["unit_high"]))
         except (KeyError, InvalidOperation, ValueError) as exc:
             raise ValueError("Invalid quantity or unit price") from exc
-        if not all(value.is_finite() for value in (quantity, low, high)) or quantity <= 0 or low < 0 or high < low:
+        if not all(value.is_finite() for value in (quantity, quantity_high, low, high)) or not 0 < quantity <= quantity_high or not 0 <= low <= high:
             raise ValueError("Invalid quantity or unit price range")
-        line = {**item, "low": quantity * low, "high": quantity * high}
+        line = {**item, "low": quantity * low, "high": quantity_high * high}
         lines.append(line)
         totals["low"] += line["low"]
         totals["high"] += line["high"]

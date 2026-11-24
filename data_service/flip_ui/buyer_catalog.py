@@ -18,7 +18,10 @@ def utcnow():
 
 
 def current_payload(value, now):
-    data = json.loads(value)
+    return expire_payload(json.loads(value), now)
+
+
+def expire_payload(data, now):
     for expiry, fields in (
         ('sales_expires', ('sales', 'resale')),
         ('projects_expires', ('projects',)),

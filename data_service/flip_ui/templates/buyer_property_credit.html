@@ -12,6 +12,7 @@
     {% if home.days_on_market is defined %}<span>{{ home.days_on_market }} {{ 'day' if home.days_on_market == 1 else 'days' }} on market</span>{% endif %}
     {% if home.listing_updated %}<span>Listing updated by MLS <time datetime="{{ home.listing_updated }}">{{ home.listing_updated }}</time></span>{% endif %}
     {% if home.details_checked %}<span>MLS details checked <time datetime="{{ home.details_checked }}">{{ home.details_checked[:10] }} at {{ home.details_checked[11:16] }} UTC</time></span>
-    {% elif home.updated %}<span>Inventory last checked <time datetime="{{ home.updated }}">{{ home.updated[:10] }}</time></span>{% endif %}
+    {% endif %}
+    {% if home.updated and (home.inventory_stale or not home.details_checked) %}<span>Inventory last checked <time datetime="{{ home.updated }}">{{ home.updated[:10] }}</time></span>{% endif %}
   </p>
 {% endif %}

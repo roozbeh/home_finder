@@ -57,6 +57,16 @@ The search, map and counts use the same published filters. A home has categorize
 
 Structured recommendations require published renovation work and eligible resale evidence, and expire with the earliest supporting comparable. For an existing admin assessment, a reviewer can approve the exact saved revision after reviewing the scope, source rights and dependencies. On the corresponding `reviewed_listings` entry, set `purchase_assessment_created_at` to the assessed version's exact UTC creation timestamp and `purchase_assessment_refresh_by` to the review expiry. The source and listing must permit `derived`, `valuation`, `sold_comps` and AI-derived material (`ai`). A changed revision needs a new review. Only the numerical inputs needed to calculate the public recommendation are copied. The admin notes, exact comparable IDs and raw model output stay private.
 
+## Operator-approved AI renovation ranges
+
+Set `publish_operator_renovation_estimates` to `true` in the operator's private live policy to show saved AI flip assessments on eligible for-sale listings. Complete saved assessments use the same break-even calculation as the admin view. The public projection includes the first saved cost range per area, sanitized work notes and the modeled aggregate resale number. The work notes omit source evidence, comparable references and contact instructions. Listing, photo, address and comparable-record eligibility still use their existing rules. This reads saved assessments without running inference.
+
+The same setting also exposes the latest local cost draft that matches the current listing and gallery, when the listing can show its address and photos. These drafts carry area subtotals, work details, and labels for unpriced work and partial estimates. An existing saved or reviewed estimate takes precedence. The local draft does not supply resale, financing, or a purchase recommendation.
+
+- [ ] Confirm and document MLS-specific rights for using listing photos, remarks, and historical sales in AI estimates.
+- [ ] Verify the 2988 Orchid model valuation against reviewed comparable sales and replace legacy assumptions when better evidence is available.
+- [ ] Replace legacy aggregate ranges with sourced line items using dated local prices, and test the local model on reviewed scopes before expanding assessment coverage.
+
 ## Property type categories
 
 The publisher stores a buyer-facing category only when the source and listing both allow property type, and the feed has a recognized classification. It prefers the more specific ConnectMLS detail field. It can use a listing-level text label when the detail supplies an unknown code. For example, a record with detail `107` and listing-level `Farm / Ranch` uses the explicit ranch label. A standalone `109` remains uncategorized. Listings with uncertain or withheld classifications remain available under **Any**.

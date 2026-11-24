@@ -1,0 +1,16 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_PROGRESS_BAR=off
+COPY photo_categorizer/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY photo_categorizer/cost_backfill.py photo_categorizer/bay_area_renovation_rates.json \
+     photo_categorizer/bulk_moondream.py photo_categorizer/categorize_photos.py \
+     photo_categorizer/photo_inference.py photo_categorizer/active_listing.py \
+     photo_categorizer/gallery_photo_labels.py \
+     flip_ui/buyer_live_feed.py flip_ui/buyer_publish.py flip_ui/buyer_catalog.py \
+     flip_ui/buyer_listing_facts.py flip_ui/buyer_media.py flip_ui/buyer_photo_labels.py \
+     flip_ui/buyer_analysis.py flip_ui/buyer_property_types.py flip_ui/mls_geography.py \
+     flip_ui/renovation_costs.py flip_ui/renovation_drafts.py ./
+ENTRYPOINT ["python", "/app/cost_backfill.py"]

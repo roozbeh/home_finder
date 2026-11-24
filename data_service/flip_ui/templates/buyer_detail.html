@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='buyer-analysis.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='photo-modal.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='buyer-property.css') }}">
+{% if recommendation and recommendation.operator_saved %}<script defer src="{{ url_for('static', filename='buyer-work-notes.js') }}"></script>{% endif %}
 {% endblock %}
 {% macro actions(connect, tour, available) %}
   {% if available %}
@@ -28,7 +29,7 @@
 <div class="property-page">
   <div class="property-toolbar">
     <a class="text-action" href="{{ back_url }}">Back to homes</a>
-    <span class="property-status">{{ {'sale':'For sale', 'rent':'For rent', 'sold':'Sold'}[market] }}</span>
+    <span class="property-status">{{ (home.status if buyer_atlas_staging else none) or {'sale':'For sale', 'rent':'For rent', 'sold':'Sold'}[market] }}</span>
   </div>
 
   <div class="property-feature">
@@ -55,7 +56,7 @@
       {% endif %}
     </section>
 
-    <div class="property-intro{% if market != 'sold' %} has-actions{% endif %}">
+    <div class="property-intro">
       <section class="listing-summary">
         <p class="eyebrow">{{ {'sale':'Asking price', 'rent':'Monthly rent', 'sold':'Sold price'}[market] }}</p>
         <h1>{{ money(home.price) }}</h1>
@@ -73,6 +74,38 @@
           <li>HOA fee {{ hoa['HOA fee'] }}{% if hoa.get('HOA billing period') %} · {{ hoa['HOA billing period'] }}{% endif %}</li>
           {% endif %}
         </ul>
+        {% endif %}
+        {% set renovation_estimate = home.operator_renovation_estimate %}
+        {% if renovation_estimate and not recommendation and not analysis %}
+        <section id="renovation" aria-labelledby="renovation-estimate-title">
+          <h3 id="renovation-estimate-title">{{ 'Partial AI renovation estimate' if renovation_estimate.partial else 'AI renovation estimate' }}</h3>
+          {% if renovation_estimate.low is number %}
+          <p class="property-locality">{{ money(renovation_estimate.low) }}–{{ money(renovation_estimate.high) }}</p>
+          {% else %}
+          <p class="property-locality">Cost range unavailable</p>
+          {% endif %}
+          {% if renovation_estimate.areas %}
+          <ul class="saved-renovation-items">
+            {% for area in renovation_estimate.areas %}
+            <li>
+              <details class="saved-work-detail">
+                <summary>{{ area.label }} · {% if area.low is number and area.high > 0 %}{{ money(area.low) }}–{{ money(area.high) }}{% if area.partial %} estimated so far{% endif %}{% elif area.low == 0 and not area.partial %}No visible work proposed{% else %}Cost range unavailable{% endif %}</summary>
+                {% if area.condition %}<p>{{ area.condition }}</p>{% endif %}
+                {% if area['items'] %}
+                <ul>
+                  {% for item in area['items'] %}
+                  <li>{{ item.label }} · {% if item.low is number %}{{ money(item.low) }}–{{ money(item.high) }}{% else %}Unpriced{% endif %}
+                    {% if item.detail %}<p>{{ item.detail }}</p>{% endif %}
+                  </li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
+              </details>
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </section>
         {% endif %}
         {% include 'buyer_property_credit.html' %}
       </section>
@@ -93,6 +126,27 @@
       </div>
       {% endif %}
     </div>
+    {% if home.facts or home.remarks %}
+    <div class="property-description">
+      {% if home.facts %}
+      <section class="property-section property-facts-panel">
+        <h2>Facts &amp; features</h2>
+        <div class="property-facts-grid">
+          {% for group, entries in home.facts.items() if entries %}<section class="property-fact-group">
+            <h3>{{ group }}</h3>
+            <dl>{% for label, value in entries.items() %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+          </section>{% endfor %}
+        </div>
+      </section>
+      {% endif %}
+      {% if home.remarks %}
+      <section class="property-section property-overview">
+        <h2>About this home</h2>
+        <p>{{ home.remarks }}</p>
+      </section>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
   {% if home.photos|length > 1 %}
@@ -117,23 +171,6 @@
   </details>
   {% endif %}
 
-  {% if home.remarks %}
-  <section class="property-section property-overview">
-    <h2>About this home</h2>
-    <p>{{ home.remarks }}</p>
-  </section>
-  {% endif %}
-  {% if home.facts %}
-  <section class="property-section property-facts-panel">
-    <h2>Facts &amp; features</h2>
-    <div class="property-facts-grid">
-      {% for group, entries in home.facts.items() if entries %}<section class="property-fact-group">
-        <h3>{{ group }}</h3>
-        <dl>{% for label, value in entries.items() %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
-      </section>{% endfor %}
-    </div>
-  </section>
-  {% endif %}
   {% if market == 'sale' %}{% include 'buyer_analysis_panels.html' %}{% endif %}
 </div>
 {% if buyer_identity and market != 'sold' %}<div class="mobile-actions property-mobile-actions">{{ actions(connect, tour, true) }}</div>{% endif %}

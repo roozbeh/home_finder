@@ -5,10 +5,14 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 MLS_PHOTO_HOSTS = frozenset({
     'media.mlslmedia.com', 'sfarmedia.rapmls.com',
-    'bridgemls-assets.cdn-connectmls.com', 'media.crmls.org',
+    'bridgemls-assets.cdn-connectmls.com', 'media.crmls.org', 'barimedia.rapmls.com',
 })
 MLS_LISTINGS_PHOTO = re.compile(r'/property/MLSL/[0-9]{8}/[0-9a-fA-F]{32}/[0-9]{1,4}/[0-9]{1,3}')
 CRMLS_PHOTO = re.compile(r'/media[sz]/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.jpg', re.I)
+BAREIS_PHOTO = re.compile(
+    r'/norcalmls/listingpics/bigphoto/[0-9]{4}/[0-9]{2}/[0-9]{2}/'
+    r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.jpg', re.I,
+)
 NEXT_MARKER = re.compile(rb'\xff[\x01-\xcf\xd8-\xff]')
 
 
@@ -29,12 +33,23 @@ def approved_mls_photo_url(url):
                 and CRMLS_PHOTO.fullmatch(parts.path)):
             return url
         return None
+    if parts.netloc == 'barimedia.rapmls.com':
+        return url if BAREIS_PHOTO.fullmatch(parts.path) else None
     if re.fullmatch(r'/[a-zA-Z0-9/_.-]+\.jpe?g', parts.path, re.I):
         return url
     # ConnectMLS supplies MLSListings JPEGs at this provider endpoint without a file extension.
     if parts.netloc == 'media.mlslmedia.com' and MLS_LISTINGS_PHOTO.fullmatch(parts.path):
         return url
     return None
+
+
+def mls_photo_variant(url):
+    """Return the stable ID and preference for an approved photo URL."""
+    parts = urlsplit(url)
+    if parts.netloc == 'media.mlslmedia.com' and MLS_LISTINGS_PHOTO.fullmatch(parts.path):
+        prefix, size, index = url.rsplit('/', 2)
+        return f'{prefix}/{index}', size == '2'
+    return url.partition('?')[0], not parts.query
 
 
 def approved_mls_gallery(primary, gallery):
@@ -44,14 +59,7 @@ def approved_mls_gallery(primary, gallery):
         url = approved_mls_photo_url(candidate)
         if not url:
             continue
-        parts = urlsplit(url)
-        if parts.netloc == 'media.mlslmedia.com' and MLS_LISTINGS_PHOTO.fullmatch(parts.path):
-            prefix, size, index = url.rsplit('/', 2)
-            key = f'{prefix}/{index}'
-            preferred = size == '2'  # Full gallery size, when supplied alongside a thumbnail.
-        else:
-            key = url.partition('?')[0]
-            preferred = not parts.query
+        key, preferred = mls_photo_variant(url)
         previous = photos.get(key)
         if previous is None:
             photos[key] = url, preferred, []
