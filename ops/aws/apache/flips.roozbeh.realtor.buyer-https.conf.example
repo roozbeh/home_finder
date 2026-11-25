@@ -25,12 +25,12 @@
 
     # Public buyer app. Forward paths explicitly so its operator pages stay on private ingress.
     ProxyPassMatch "^/$" "http://127.0.0.1:8091/"
-    ProxyPassMatch "^(/(?:homes|static)(?:/.*)?)$" "http://127.0.0.1:8091$1"
-    ProxyPassMatch "^(/agents/partner/?)$" "http://127.0.0.1:8091$1"
+    ProxyPassMatch "^/((?:homes|static)(?:/.*)?)$" "http://127.0.0.1:8091/$1"
+    ProxyPassMatch "^/(agents/partner/?)$" "http://127.0.0.1:8091/$1"
     ProxyPassReverse / http://127.0.0.1:8091/
 
     # Preserve the existing private review app. Finalize its network access with the operator.
-    ProxyPassMatch "^(/admin(?:/.*)?)$" "http://127.0.0.1:8090$1"
+    ProxyPassMatch "^/(admin(?:/.*)?)$" "http://127.0.0.1:8090/$1"
     ProxyPassReverse /admin http://127.0.0.1:8090/admin
     <Location "/admin">
         # Replace local-only access with the approved VPN or operator CIDR before activation.

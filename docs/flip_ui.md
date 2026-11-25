@@ -1,8 +1,8 @@
 # Flip Finder review UI
 
-The separate `flip_ui` container serves the public mission page at
-`flips.roozbeh.realtor` and the private labeling workspace at `/admin`.
-It reads `flip_finder.flipdb`, joins the two MLS source records by `buy_mls` and
+The `flip_ui` service runs as `flips_admin` and serves the sign-in and private
+labeling workspace at `flips.roozbeh.realtor/admin`. It reads `flip_finder.flipdb`,
+joins the two MLS source records by `buy_mls` and
 `sell_mls`, and writes reviewer labels only to `flip_finder.flip_labels`.
 
 Set these values in the protected `data_service/env` file on each host (never
@@ -26,6 +26,11 @@ docker compose up -d --build flip_ui
 # http://localhost:8090
 ```
 
-The AWS Apache virtual host proxies only to `127.0.0.1:8090`; the container is
-not exposed directly to the internet. Obtain the TLS certificate only after the
-`flips` DNS record resolves to the AWS host.
+The AWS HTTPS virtual host proxies `/admin` and its subpaths to `flips_admin`
+at `127.0.0.1:8090`. It sends the homepage, `/homes`, `/static`, and the
+agent partner route to `flips_public` at `127.0.0.1:8091`. The public service
+uses `data_service/docker-compose.buyer-production.yml` and mounts the existing
+SQLite catalog from the approved buyer publisher read-only. On AWS, use the
+`flip-buyer` Compose project and
+`--env-file /mnt/extra500/flip_finder/buyer-public/compose.env` to manage
+`buyer-public`.
