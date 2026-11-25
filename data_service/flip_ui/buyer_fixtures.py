@@ -1,10 +1,8 @@
 """Fictional property examples. Media were generated for this preview."""
-import argparse
-import json
 from pathlib import Path
 
 from buyer_analysis_fixtures import cost_items, evidence_fixture
-from buyer_publish import FIELDS, publish
+from buyer_publish import FIELDS
 
 FAIRFIELD = 'r4q7w3n6fa1p'
 PENDING = 'h6f9v8n2s7mb'
@@ -50,15 +48,3 @@ def fixture_manifest(asset_dir=None):
                  'days_on_market': 46, 'auction': True, 'media': photos,
                  'policy': {**grant, 'allow': {**flags, 'media': False}}},
             ]}
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--assets', type=Path, default=Path(__file__).with_name('fixtures'))
-    parser.add_argument('--manifest', required=True, type=Path)
-    parser.add_argument('--catalog', type=Path)
-    args = parser.parse_args()
-    args.manifest.parent.mkdir(parents=True, exist_ok=True)
-    args.manifest.write_text(json.dumps(fixture_manifest(args.assets), indent=2))
-    if args.catalog:
-        publish(json.loads(args.manifest.read_text()), args.catalog, args.assets)

@@ -1,26 +1,18 @@
-"""Publish the daily ConnectMLS store using explicitly cleared source rules."""
-import argparse
+"""Project live ConnectMLS listing fields using explicitly cleared source rules."""
 import hashlib
 import hmac
-import json
 import math
-import os
 import re
-import time
 from datetime import datetime, timedelta, timezone
-from itertools import chain
-from pathlib import Path
 
-from pymongo import MongoClient
 
 from mls_geography import BAY_COUNTIES
 from buyer_analysis import ASSESSMENT_NUMBERS
 from buyer_listing_facts import FACT_KEYS, public_facts, public_text
 from buyer_media import approved_mls_gallery, mls_photo_variant
-from buyer_photo_labels import CATEGORIES, apply_bulk_categories, gallery_category
+from buyer_photo_labels import CATEGORIES
 from buyer_property_types import listing_property_type
-from buyer_publish import FIELDS, publish, rights
-from renovation_drafts import COLLECTION, current_gallery, fingerprint
+from buyer_publish import FIELDS, rights
 
 ACTIVE = ('ACTV', 'NEW', 'BOMK', 'PCH')
 BAY_COUNTY_QUERY = {'$in': BAY_COUNTIES + [county.upper() for county in BAY_COUNTIES]}
@@ -125,8 +117,7 @@ def publication_id(id_key, source, listing_id):
 ACTIVE_STATUS_LABELS = {'ACTV': 'Active', 'NEW': 'New', 'BOMK': 'Back on market', 'PCH': 'Price changed'}
 
 
-def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, bulk_classifications=None,
-                 saved_assessments=None, cost_drafts=None, publish_operator_estimates=False, now=None, audit=None,
+def manifest_for(listings, rules, id_key, *, reviewed=None, saved_assessments=None, publish_operator_estimates=False, now=None, audit=None,
                  live_inventory=False, summary=False):
     now = now or datetime.now(timezone.utc)
     source_rules = {name: config for name, config in rules.items()
@@ -134,10 +125,7 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
     manifest = {'mode': 'approved', 'sources': source_rules, 'homes': [],
                 'publish_operator_renovation_estimates': publish_operator_estimates is True}
     reviewed = reviewed or {}
-    photo_labels = photo_labels or {}
     saved_assessments = saved_assessments or {}
-    cost_drafts = cost_drafts or {}
-    uncategorized = []
     for doc in listings:
         source = doc.get('SOURCE_MLS')
         listing_id = doc.get('LISTING_ID')
@@ -259,7 +247,6 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
             if not isinstance(gallery, list):
                 gallery = []
             photo_urls = approved_mls_gallery(details.get('PRIMARY_PHOTO_URI'), gallery)
-            labels = photo_labels.get(listing_id, {})
             embedded = doc.get('gallery_photo_labels')
             embedded_categories = {
                 label['photo_id']: label['category'] for label in embedded
@@ -268,10 +255,8 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
             } if isinstance(embedded, list) else {}
             row['media'] = [
                 {'display': True, 'mls_photo_url': url,
-                 'category': ((embedded_categories.get(mls_photo_variant(url)[0]) if embedded_categories else None)
-                              or gallery_category(labels, url, aliases)),
-                 **({'_photo_aliases': aliases} if aliases else {})}
-                for url, aliases in photo_urls
+                 'category': embedded_categories.get(mls_photo_variant(url)[0])}
+                for url, _ in photo_urls
             ]
         for key in ('media', 'reviewed_public_remarks', 'remarks_dependency_free', 'analysis_origin',
                     'cost_items', 'cost_version', 'cost_dependency_free', 'partial_budget', 'analysis_date'):
@@ -282,14 +267,6 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
         if (market == 'sale' and publish_operator_estimates is True and assessment
                 and assessment.get('method') == 'active_listing_proposed_visible_work'):
             row['operator_flip_assessment'] = {key: assessment.get(key) for key in (*ASSESSMENT_NUMBERS, 'observations')}
-        if (market == 'sale' and publish_operator_estimates is True
-                and 'operator_flip_assessment' not in row and not row.get('cost_items')
-                and (drafts := cost_drafts.get((source, listing_id)))):
-            gallery_version = fingerprint(current_gallery(doc))
-            draft = next((value for value in drafts if value.get('gallery_version') == gallery_version
-                          and value.get('listing_object_id') == doc.get('_id')), None)
-            if draft:
-                row['operator_flip_assessment'] = draft
         if (market == 'sale' and approval_time is not None and approval_time <= now and assessment
                 and read_stamp(assessment.get('created_at')) == approval_time
                 and assessment.get('valuation_status') == 'AI_estimate_requires_review'
@@ -298,100 +275,5 @@ def manifest_for(listings, rules, id_key, *, reviewed=None, photo_labels=None, b
             row.setdefault('analysis_origin', 'model')
             row['reviewed_purchase_assessment'] = {key: assessment.get(key) for key in ASSESSMENT_NUMBERS}
             row['purchase_assessment_refresh_by'] = evidence['purchase_assessment_refresh_by']
-        if (bulk_classifications is not None and '_id' in doc and 'media' not in evidence
-                and row.get('media')):
-            uncategorized.extend((doc['_id'], asset) for asset in row['media'] if not asset['category'])
         manifest['homes'].append(row)
-    if uncategorized:
-        apply_bulk_categories(bulk_classifications, uncategorized)
     return manifest
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--policy', type=Path, required=True)
-    parser.add_argument('--catalog', type=Path, required=True)
-    parser.add_argument('--assets', type=Path, required=True)
-    parser.add_argument('--dry-run', action='store_true')
-    parser.add_argument('--interval', type=int, default=0, help='Repeat publication at this interval in seconds')
-    args = parser.parse_args()
-    if args.interval < 0 or (args.interval and args.dry_run):
-        parser.error('A recurring run needs a positive interval with publication enabled')
-    while True:
-        refresh(args)
-        if not args.interval:
-            break
-        time.sleep(args.interval)
-
-
-def refresh(args):
-    config = json.loads(args.policy.read_text())
-    cleared = [key for key, value in config['sources'].items() if value.get('production_approved') is True]
-    key = os.environ.get('BUYER_PUBLIC_ID_KEY', '').encode()
-    if cleared and not key:
-        path = args.policy.with_name('public-id-key')
-        if path.is_file():
-            key = path.read_bytes().strip()
-    if cleared and len(key) < 32:
-        raise RuntimeError('Set a stable BUYER_PUBLIC_ID_KEY of at least 32 characters')
-    if cleared:
-        with MongoClient(os.environ['MONGO_URI'], serverSelectionTimeoutMS=8000) as client:
-            inventory = client[os.environ.get('MONGO_DB', 'mls')].mls_listings
-            query = {
-                'SOURCE_MLS': {'$in': cleared},
-                'COUNTY_OR_PARISH': BAY_COUNTY_QUERY,
-            }
-            listing_projection = {**PROJECTION, **PHOTO_LABEL_PROJECTION}
-            active = inventory.find({**query, 'RAW_STATUS': {'$in': ACTIVE}, 'LIST_PRICE': {'$gt': 0}}, listing_projection)
-            sold_sources = [name for name in cleared if config['sources'][name].get('sold_search_days', 0) > 0]
-            sold_projection = {key: value for key, value in listing_projection.items() if key != 'photos'}
-            sold = inventory.find({**query, 'RAW_STATUS': 'SLD', 'SOURCE_MLS': {'$in': sold_sources}}, sold_projection)
-            records = chain(active, sold)
-            labels = {}
-            reviewed_labels = {}
-            photo_db = client[os.environ.get('FLIPDB_DATABASE', 'flip_finder')]
-            classifications = photo_db.active_photo_classifications
-            for record in classifications.find(
-                {'category': {'$in': list(CATEGORIES)}},
-                {'_id': 0, 'listing_id': 1, 'photo_url': 1, 'category': 1, 'method': 1},
-            ).sort('classified_at', 1):
-                destination = reviewed_labels if record.get('method') == 'manual_visual_review' else labels
-                destination.setdefault(record['listing_id'], {})[record['photo_url']] = record['category']
-            for listing_id, gallery in reviewed_labels.items():
-                labels.setdefault(listing_id, {}).update(gallery)
-            reviewed = config.get('reviewed_listings') or {}
-            approved_ids = {stable_key.split(':', 1)[1] for stable_key, evidence in reviewed.items()
-                            if ':' in stable_key and evidence.get('purchase_assessment_created_at')}
-            assessments = {}
-            publish_operator_estimates = config.get('publish_operator_renovation_estimates') is True
-            if publish_operator_estimates or approved_ids:
-                assessment_query = ({'method': 'active_listing_proposed_visible_work'} if publish_operator_estimates
-                                    else {'listing_id': {'$in': sorted(approved_ids)}})
-                if publish_operator_estimates and approved_ids:
-                    assessment_query = {'$or': [assessment_query, {'listing_id': {'$in': sorted(approved_ids)}}]}
-                assessments = {assessment['listing_id']: assessment for assessment in
-                               photo_db.active_renovation_insights.find(
-                                   assessment_query,
-                                   {field: 1 for field in ('listing_id', 'method', 'created_at',
-                                                           'valuation_status', *ASSESSMENT_NUMBERS, 'observations.area',
-                                                           'observations.detail')})}
-            cost_drafts = {}
-            if publish_operator_estimates:
-                for draft in photo_db[COLLECTION].find(
-                    {'state': {'$in': ['complete', 'partial']}},
-                    {field: 1 for field in ('source_mls', 'listing_id', 'method', 'state', 'gallery_version',
-                                            'listing_object_id', 'renovation_low', 'renovation_high', 'area_estimates')},
-                ).sort([('created_at', -1), ('_id', -1)]):
-                    cost_drafts.setdefault((draft['source_mls'], draft['listing_id']), []).append(draft)
-            manifest = manifest_for(records, config['sources'], key, reviewed=reviewed, photo_labels=labels,
-                                    bulk_classifications=photo_db.mls_photo_classifications, saved_assessments=assessments,
-                                    publish_operator_estimates=publish_operator_estimates, cost_drafts=cost_drafts)
-    else:
-        manifest = manifest_for((), {}, key)
-    if not args.dry_run:
-        publish(manifest, args.catalog, args.assets)
-    print(f'{len(cleared)} activated sources; {len(manifest["homes"])} MLS publication candidates')
-
-
-if __name__ == '__main__':
-    main()

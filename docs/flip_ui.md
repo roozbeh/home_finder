@@ -29,8 +29,8 @@ docker compose up -d --build flip_ui
 The AWS HTTPS virtual host proxies `/admin` and its subpaths to `flips_admin`
 at `127.0.0.1:8090`. It sends the homepage, `/homes`, `/static`, and the
 agent partner route to `flips_public` at `127.0.0.1:8091`. The public service
-uses `data_service/docker-compose.buyer-production.yml` and mounts the existing
-SQLite catalog from the approved buyer publisher read-only. On AWS, use the
+uses `data_service/docker-compose.buyer-production.yml` and reads
+`mls.mls_listings` with the dedicated read-only Atlas account. On AWS, use the
 `flip-buyer` Compose project and
 `--env-file /mnt/extra500/flip_finder/buyer-public/compose.env` to manage
 `buyer-public`.

@@ -6,9 +6,8 @@
 {% endblock %}
 {% block body %}
 <main class="buyer{% block buyer_class %}{% endblock %}">
-  {% if buyer_mode == 'preview' %}<div class="preview-notice">Buyer preview · Fictional homes, sample identities and test submissions</div>{% endif %}
   {% block buyer_body %}{% endblock %}
 </main>
 {% block buyer_overlay %}{% endblock %}
-<footer class="buyer-footer">Flip Finder · Bay Area fixer-upper search{% if buyer_mode == 'preview' %} · Synthetic inventory{% endif %}</footer>
+<footer class="buyer-footer">Flip Finder · Bay Area fixer-upper search</footer>
 {% endblock %}

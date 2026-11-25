@@ -98,9 +98,9 @@ class AtlasBuyerTest(TestCase):
         app.secret_key = 'staging-test-secret-more-than-32-bytes'
         app.config['SESSION_COOKIE_SECURE'] = True
         app.jinja_env.globals['csrf_token'] = lambda: 'test-token'
-        with patch.dict('os.environ', {'BUYER_ATLAS_STAGING': 'true', 'BUYER_MODE': 'approved'}), \
+        with patch.dict('os.environ', {'BUYER_ATLAS_POLICY': 'test-policy', 'BUYER_NOINDEX': 'true'}), \
                 patch.object(AtlasCatalog, 'from_environment', return_value=self.catalog):
-            register_public(app, lambda view: view, lambda: None)
+            register_public(app)
         self.assertNotIn('buyer_inbox', app.extensions)
         self.client = app.test_client()
         self.public_id = publication_id(KEY, 'MLSLISTINGS', 'ML82065431')

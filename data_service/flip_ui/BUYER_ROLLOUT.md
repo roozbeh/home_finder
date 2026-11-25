@@ -1,53 +1,35 @@
 # Flip Finder buyer site rollout
 
-Local review and deployment run the same signed-out buyer routes over a catalog built from live MLS records. Admin queues require sign-in. A catalog starts empty until a source is enabled. Production activation requires the source decisions below and an external HTTPS walkthrough.
+Local staging and production read `mls.mls_listings` directly through the dedicated read-only Atlas account. The app evaluates MLS display permissions for search, detail, map previews, and media. Apache proxies public pages to `flips_public` and `/admin` to the separate private `flips_admin` app.
 
-## Review the buyer UI
+## Local Atlas staging
 
-Run `docker compose -f data_service/docker-compose.buyer-preview.yml up --build -d buyer-preview` from the repository root. Open [home](http://localhost:8091/) or [search](http://localhost:8091/homes) signed out. The review service has its own storage volume. The publisher can populate that volume from the same live source rules used at deployment.
+From the repository root:
 
-## Publish from the daily MLS feed
+```sh
+docker compose -p homefinder-atlas-staging -f data_service/docker-compose.buyer-atlas-staging.yml up -d --build
+```
 
-The operator-only `buyer-live-publisher` reads `mls.mls_listings`. The web process receives only the generated catalog. In the publisher input directory, provide `live-policy.json` with a `sources` object keyed by the exact feed `SOURCE_MLS` value. Each authorized source needs:
+Open [search on port 8092](http://127.0.0.1:8092/homes). The ignored `data_service/buyer-atlas-staging.env` supplies `BUYER_ATLAS_URI` and `FLIP_UI_SECRET_KEY`. The production Compose file also runs locally on port 8091 with those settings.
+
+## MLS display policy
+
+In the read-only MLS policy directory, provide `live-policy.json` with a `sources` object keyed by the exact feed `SOURCE_MLS` value. Each authorized source needs:
 
 - `production_approved`, `basis`, `effective`, `refresh_by`, and a source-level `allow` object.
-- `internet_display_values`, mapping each reviewed `details.INTERNET_DISPLAY` value to its permitted field names. An unknown or omitted value excludes the listing. `internet_sites_values` must also permit the listing’s site-display setting. The default recognized value is `Yes - All Sites`. The publisher excludes listings with `No - No Sites`. Select the address and geolocation fields only where the value permits both. Confirm the official meanings for each source.
+- `internet_display_values`, mapping each reviewed `details.INTERNET_DISPLAY` value to its permitted field names. An unknown or omitted value excludes the listing. `internet_sites_values` must also permit the listing’s site-display setting. The default recognized value is `Yes - All Sites`. The reader excludes listings with `No - No Sites`. Select the address and geolocation fields only where the value permits both. Confirm the official meanings for each source.
 - `listing_refresh_hours`, the maximum age of the active summary. The optional `permission_refresh_hours` sets the maximum age of the permission-bearing detail and defaults to the same interval. Refresh the details with the existing MLS worker. A recently seen summary alone cannot renew an old permission.
 - `credit_name` for the approved source label where needed. Use optional `reviewed_listings` entries keyed by `SOURCE_MLS:LISTING_ID` to attach rights-cleared, re-encoded images and reviewed analysis. Enable `publish_source_photos` where the agreement allows photos to be served from the source CDN. The buyer server fetches only from its allowlisted media hosts, removes metadata and rechecks publication before returning bytes. These features also require permission in both source and listing policy.
 
-Put the existing Mongo connection and a stable random `BUYER_PUBLIC_ID_KEY` of at least 32 characters in the private publisher environment. Set `BUYER_PUBLISH_INPUT_DIR` and, if needed, `BUYER_MLS_PUBLISHER_ENV_FILE`. Start the repeating review publisher with `docker compose -f data_service/docker-compose.buyer-preview.yml up -d buyer-live-publisher`, or use the production Compose file for its catalog directory. The default publication interval is 15 minutes, with `BUYER_PUBLISH_INTERVAL` configurable in seconds. The publisher reads the latest successful daily ingestion and leaves expired records unavailable if refreshes stop. Preflight the reviewed policy with `--dry-run`, then verify counts, suppression and a withdrawal before enabling traffic.
+Approve each source and field mapping with the responsible broker. Record scope, attribution, permission effective times, refresh deadlines, and seller opt-outs. Review authorization for derived analysis and access to any additional data separately. Keep policy files, approved local assets, and the existing opaque ID key outside Git.
 
-## Decisions for Roozbeh and the responsible broker
+## Production
 
-| Decision | Information to supply |
-|---|---|
-| Responsible brokerage and first-contact disclosures | Verified display name, licensed brokerage name, license and disclosure wording, approved contact channels, who owns the inbox, and any authorized portrait. Approve the public label and attribution for each source. |
-| Listing feeds | Identify each originating MLS or direct licensor. Confirm in writing the actual feed fields, authorized statuses and uses, allowed address and coordinates, media, remarks, seller opt-outs and valuation rights. Record permission effective times and refresh deadlines. Have the broker validate the normalized field mapping for each agreement before the first approved export. |
-| Analysis | Approve photo and public-remarks processing with the named processor, retention, publication of derived analysis, treatment of sales comparables and dates, and any separate historical or training rights. Obtain contractor bids or invoices for the selected scopes and approve the processing budget. Listings with public rights can launch while those reviews continue. |
-| Supply partner | Choose one consenting wholesaler. Confirm authority to advertise and deliver photos, allowed attribution and display granularity, authorized access contact, update cadence, withdrawal process, any assignment terms, and handling of private access instructions. Confirm the partner's verification interval before enabling a production intake. |
-| Lead handling | Approve collection wording, notice and retention, secure delivery, response ownership, touring and representation procedures, and any buyer-authorized introductions to a verified partner. Agree on paid terms with the responsible broker before enabling referral or advertising payments. Title leads, trust-owner targeting, gated listings and automated paid distribution remain business follow-up. |
-| Production access | Approve the hostname, TLS renewal owner, operator-only network and hostname for buyer queues, admin credentials, protected backup and restore process, and which listing source to enable first. |
-
-The [future work plan](../../PLAN_FOR_FUTURE.md) tracks MLS decisions and outstanding checks.
-
-## Stage the approved service
-
-1. Create a private publisher-input directory for the normalized `manifest.json` and re-encoded allowed JPEGs under `media/`. Create separate publisher-output and submissions directories. Mount the output directory as a unit so atomic file replacement stays visible to the web process. The publisher can write its output. The buyer web process reads it through a read-only bind mount and writes only to its separate submissions directory. Keep the input, publisher and private data directories outside the Apache document root.
-2. Set the four path variables `BUYER_PRODUCTION_ENV_FILE`, `BUYER_PUBLISHED_DIR`, `BUYER_PRIVATE_DIR` and `BUYER_PUBLISH_INPUT_DIR` in operator-controlled Compose configuration. Use absolute local paths and a buyer-only environment file with mode 0600. Set `BUYER_IDENTITY_VERIFIED=true`, `BUYER_IDENTITY_NAME`, `BUYER_IDENTITY_BROKERAGE`, `BUYER_IDENTITY_LICENSE`, `BUYER_IDENTITY_DISCLOSURE`, `BUYER_IDENTITY_RECIPIENT`, `FLIP_UI_ADMIN_USERNAME`, `FLIP_UI_ADMIN_PASSWORD` and a distinct random `FLIP_UI_SECRET_KEY` of at least 32 characters. Compose sets approved mode and secure cookies and removes the legacy Mongo URI. Use a recipient identity approved for this deployment. Verify the inbox as the delivery source of truth. For approved notifications, use an operator job with `--smtp` and verified `BUYER_SMTP_HOST`, `BUYER_SMTP_PORT`, `BUYER_SMTP_FROM`, `BUYER_SMTP_TO` and authentication settings. Confirm retries and delivery separately from the web ingress.
-3. Put only reviewed sources in `live-policy.json`. Store the bases and deadlines privately and set source and listing grants explicitly. Set `production_approved: true` on each cleared source in the private manifest. Sources without that marker are excluded in approved mode. In addition to the normalized field rules, a reviewer must certify safe remarks with `remarks_dependency_free` and cost text with `cost_dependency_free` after checking for restricted addresses, comps and valuations. Mark individual media approved and re-encode it as a JPEG with metadata and thumbnails removed. The publisher validates the JPEG container before accepting it. Keep the signed source-field mapping and fixture adapter separate. Build from the intended release checkout and run publication tests before wiring the hostname.
+On AWS, run from `data_service`:
 
 ```sh
-cd data_service
-docker compose -p flip-buyer -f docker-compose.buyer-production.yml config --quiet
-docker compose -p flip-buyer -f docker-compose.buyer-production.yml build
-docker compose -p flip-buyer -f docker-compose.buyer-production.yml up -d buyer-live-publisher
-docker compose -p flip-buyer -f docker-compose.buyer-production.yml up -d buyer-public
+docker-compose --env-file /mnt/extra500/flip_finder/buyer-public/compose.env \
+  -p flip-buyer -f docker-compose.buyer-production.yml up -d --build buyer-public
 ```
 
-4. Stage the [Apache candidate](../../ops/aws/apache/flips.roozbeh.realtor.buyer-https.conf.example) alongside the existing configuration for review. Verify actual certificate paths and automatic renewal, proxy modules, ACME challenge routing, and the approved operator network. The candidate forwards `/`, `/homes`, property subroutes, `/agents/partner` and static assets to loopback port 8091. Existing legacy review stays at 8090 and needs approval for the operator access rule. Run `apachectl configtest`, then perform the approved reload. The public service trusts exactly one proxy hop. Preserve Apache's forwarding behavior and incoming `X-Forwarded-For` reset so the rate limit sees buyer addresses. Keep the previous configuration available for rollback. Set up a separate TLS operator-only ingress to 8091 for `/admin/login`, `/admin/logout`, `/admin/leads` and `/admin/partners`, since those queues use the buyer app's own session and database. Check that anonymous and demo roles cannot read or update them. The candidate leaves those endpoints outside the public ingress. Do not use an automatic production rollout that pulls or restarts unrelated services.
-5. Run approved-source refresh at the agreed interval and prioritize withdrawals and grant changes over worker jobs. Rebuild the publication artifact on changes. If direct supply is activated, run the private approval and publication workflow using the same source permission document with `buyer_supply.py` as the single rebuilding entry point, mounting private supply data only in the operator process. The public process needs only the resulting catalog. Set cache bypass for listing HTML, detail, media, forms and receipt routes in any upstream CDN. Test an existing warmed URL after removal, including direct asset requests and stale submissions. Expired grants fall out of the live catalog even if a refresh is delayed.
-6. From a fresh signed-out external browser, open [the production hostname](https://flips.roozbeh.realtor/) only after rollout authorization. Verify HTTPS redirects and secure sessions. Open approved listings with and without analysis, verify attribution and data suppression, then submit a consented contact, tour request and agent application. Match each record and status in the private queues. Confirm that maps and media follow the approved policies and the withdrawn case fails across detail, search and contact. Record the release revision, timestamp, public browser evidence and broker clearance before reporting launch.
-
-## Rollback
-
-Remove or deny public buyer forwarding and reload the saved, validated Apache configuration. Keep the underlying service loopback-only, retain the submissions and audit stores and preserve private access while investigating. For a rights change, publish an updated or empty approved catalog and purge any upstream entries. Treat old snapshots as evidence and restore inventory only from current permissions. Revalidate the TLS route, public availability and private queues before reactivating.
+`BUYER_PRODUCTION_ENV_FILE` points to the protected buyer-only env file. `BUYER_PUBLISH_INPUT_DIR` points to the existing policy and opaque ID key. Verify the app on loopback, then verify search, listings, media, and authenticated admin access through HTTPS. Keep the Apache configuration backup and any previously verified Atlas application image available for rollback.

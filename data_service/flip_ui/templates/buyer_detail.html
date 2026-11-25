@@ -8,28 +8,17 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='buyer-property.css') }}">
 {% if recommendation and recommendation.operator_saved %}<script defer src="{{ url_for('static', filename='buyer-work-notes.js') }}"></script>{% endif %}
 {% endblock %}
-{% macro actions(connect, tour, available) %}
-  {% if available %}
-    <a class="buyer-button" href="{{ tour }}">Request a Tour</a>
-    <a class="buyer-button secondary" href="{{ connect }}">Contact Agent</a>
-  {% else %}
-    <button type="button" class="buyer-button" disabled>Request a Tour</button>
-    <button type="button" class="buyer-button secondary" disabled>Contact Agent</button>
-  {% endif %}
-{% endmacro %}
 {% macro gallery_photo(asset, index) %}
   <a class="property-gallery-image" data-open-photo href="{{ url_for('buyer.media', home_id=home.id, media_id=asset) }}" aria-label="Enlarge photo {{ index }}">
     {{ photo(home, asset, true) }}
   </a>
 {% endmacro %}
 {% block buyer_body %}
-{% set connect = url_for('buyer.inquiry', home_id=home.id, kind='contact') %}
-{% set tour = url_for('buyer.inquiry', home_id=home.id, kind='request-tour') %}
 {% set market = home.market or 'sale' %}
 <div class="property-page">
   <div class="property-toolbar">
     <a class="text-action" href="{{ back_url }}">Back to homes</a>
-    <span class="property-status">{{ (home.status if buyer_atlas_staging else none) or {'sale':'For sale', 'rent':'For rent', 'sold':'Sold'}[market] }}</span>
+    <span class="property-status">{{ home.status or {'sale':'For sale', 'rent':'For rent', 'sold':'Sold'}[market] }}</span>
   </div>
 
   <div class="property-feature">
@@ -110,20 +99,8 @@
         {% include 'buyer_property_credit.html' %}
       </section>
 
-      {% if market != 'sold' %}
-      <div class="property-decision">
-        {% if market == 'sale' and recommendation %}{% include 'buyer_purchase_card.html' %}{% endif %}
-        <div class="property-inline-actions{% if buyer_identity %} has-mobile-bar{% endif %}">{{ actions(connect, tour, buyer_identity) }}</div>
-        {% if buyer_identity %}
-        <div class="property-buyer-disclosure">
-          <p><strong>{{ buyer_identity.name }}</strong> · Buyer’s agent</p>
-          <p>{{ buyer_identity.brokerage }} · {{ buyer_identity.license }}</p>
-          {% if buyer_identity.disclosure %}<p>{{ buyer_identity.disclosure }}</p>{% endif %}
-        </div>
-        {% else %}
-        <p class="property-buyer-disclosure">Tour and contact requests are currently unavailable.</p>
-        {% endif %}
-      </div>
+      {% if market == 'sale' and recommendation %}
+      <div class="property-decision">{% include 'buyer_purchase_card.html' %}</div>
       {% endif %}
     </div>
     {% if home.facts or home.remarks %}
@@ -173,7 +150,6 @@
 
   {% if market == 'sale' %}{% include 'buyer_analysis_panels.html' %}{% endif %}
 </div>
-{% if buyer_identity and market != 'sold' %}<div class="mobile-actions property-mobile-actions">{{ actions(connect, tour, true) }}</div>{% endif %}
 {% endblock %}
 {% block buyer_overlay %}
   {% if home.photos %}

@@ -10,11 +10,10 @@ import re
 
 from pymongo import MongoClient
 
-from buyer_catalog import expire_payload
 from buyer_listing_facts import FACT_KEYS
 from buyer_live_feed import ACTIVE, BAY_COUNTY_QUERY, MAPPED, PHOTO_LABEL_PROJECTION, PROJECTION, manifest_for, publication_id
 from buyer_property_types import PROPERTY_GROUPS, normalized, type_filter
-from buyer_publish import project
+from buyer_publish import expire_payload, project
 
 
 GALLERY_PROJECTION = {
@@ -87,7 +86,7 @@ def matches(home, filters):
 class AtlasCatalog:
     def __init__(self, collection, config, id_key, asset_dir, *, clock=None):
         if len(id_key) < 32:
-            raise RuntimeError('Atlas staging requires the existing public listing ID key')
+            raise RuntimeError('Public Atlas access requires the existing public listing ID key')
         self.collection = collection
         self.rules = {name: rule for name, rule in config['sources'].items()
                       if rule.get('production_approved') is True}
@@ -100,7 +99,7 @@ class AtlasCatalog:
     @classmethod
     def from_environment(cls, uri, policy_path, key):
         if not uri or not policy_path:
-            raise RuntimeError('Atlas staging requires BUYER_ATLAS_URI and BUYER_ATLAS_POLICY')
+            raise RuntimeError('Public Atlas access requires BUYER_ATLAS_URI and BUYER_ATLAS_POLICY')
         path = Path(policy_path)
         config = json.loads(path.read_text())
         id_key = key.encode() if key else path.with_name('public-id-key').read_bytes().strip()

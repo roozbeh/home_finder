@@ -59,7 +59,6 @@
         </ul>
       </details>
       {% endif %}
-      {% if not private_analysis and buyer_identity %}<p><a href="{{ url_for('buyer.inquiry', home_id=home.id, kind='contact', entry='estimate') }}">Ask about this estimate</a></p>{% endif %}
   </section>
   {% endif %}
   {% if not private_analysis and home.sales %}

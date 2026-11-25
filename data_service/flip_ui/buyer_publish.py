@@ -1,28 +1,38 @@
-"""Offline publisher. Input is a broker-reviewed normalized manifest, never a raw MLS payload."""
-import argparse
+"""Apply display grants to normalized listing fields and assets."""
 import hashlib
-import json
 import math
-import os
 import re
-import sqlite3
-import tempfile
 from datetime import date, datetime, timezone
-from pathlib import Path
 
 from buyer_analysis import comparable_sales, money, project_matches, purchase_recommendation, saved_flip_breakdown, scopes
-from buyer_catalog import utcnow
 from buyer_listing_facts import checked_facts, listing_credit, public_text
 from buyer_media import approved_mls_photo_url, validated_jpeg
 from buyer_photo_labels import CATEGORIES
 from buyer_property_types import property_type_group, property_type_label
-from renovation_drafts import METHOD as LOCAL_ESTIMATE_METHOD
+
+LOCAL_ESTIMATE_METHOD = 'local_visible_work_unit_rates'
 
 FIELDS = ('city', 'price', 'property_type', 'beds', 'baths', 'sqft', 'status', 'address',
           'geolocation', 'media', 'public_remarks', 'credits', 'updated', 'days_on_market',
           'original_price', 'auction', 'bank_owned', 'ai', 'derived', 'valuation',
           'sold_comps', 'historical_projects', 'comments', 'sale_date', 'purchase_price',
           'purchase_date', 'verified_costs', 'comp_matching', 'facts', 'sold_search')
+
+
+def utcnow():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def expire_payload(data, now):
+    for expiry, fields in (
+        ('sales_expires', ('sales', 'resale')),
+        ('projects_expires', ('projects',)),
+        ('recommendation_expires', ('recommendation',)),
+    ):
+        if data.pop(expiry, now) <= now:
+            for key in fields:
+                data.pop(key, None)
+    return data
 
 
 def timestamp(value):
@@ -315,53 +325,3 @@ def project(manifest, row, asset_dir, *, now=None):
             if assessment.get('method') != LOCAL_ESTIMATE_METHOD or {'address', 'media'} <= allow:
                 project_operator_assessment(home, expires, assessment)
     return (home, expires), assets
-
-
-SCHEMA = """
-CREATE TABLE homes(id TEXT PRIMARY KEY, mode TEXT, expires TEXT, city TEXT, price INTEGER,
-    beds INTEGER, dom INTEGER, reduced INTEGER, auction INTEGER, bank_owned INTEGER, payload TEXT);
-CREATE INDEX homes_inventory ON homes(mode, price, id);
-CREATE INDEX homes_city ON homes(mode, city);
-CREATE TABLE media(home_id TEXT, id TEXT, content BLOB, mime TEXT, PRIMARY KEY(home_id, id));
-"""
-
-
-def publish(manifest, path, asset_dir):
-    if manifest.get('mode') not in ('preview', 'approved'):
-        raise ValueError('Explicit publication mode required')
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as temporary:
-        target = Path(temporary.name)
-    try:
-        with sqlite3.connect(target) as db:
-            db.executescript(SCHEMA)
-            seen = set()
-            for row in manifest['homes']:
-                if row['id'] in seen:
-                    raise ValueError('Duplicate publication ID')
-                seen.add(row['id'])
-                result, assets = project(manifest, row, Path(asset_dir))
-                if result is None:
-                    continue
-                home, expires = result
-                db.execute('INSERT INTO homes VALUES (?,?,?,?,?,?,?,?,?,?,?)', (
-                    home['id'], manifest['mode'], expires, home.get('city'), home['price'], home.get('beds'),
-                    home.get('days_on_market'), home.get('reduced'), home.get('auction'),
-                    home.get('bank_owned'), json.dumps(home, ensure_ascii=False),
-                ))
-                db.executemany('INSERT INTO media VALUES (?,?,?,?)', assets)
-        db.close()
-        target.chmod(0o644)
-        os.replace(target, path)
-    finally:
-        target.unlink(missing_ok=True)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('manifest', type=Path)
-    parser.add_argument('catalog', type=Path)
-    parser.add_argument('--assets', required=True, type=Path)
-    args = parser.parse_args()
-    publish(json.loads(args.manifest.read_text()), args.catalog, args.assets)

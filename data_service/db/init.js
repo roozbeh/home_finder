@@ -28,11 +28,4 @@ db.createCollection('mls_runs');
 db.mls_runs.createIndex({ timestamp: -1 });
 db.mls_runs.createIndex({ type: 1, timestamp: -1 });
 
-// ── mls_details ───────────────────────────────────────────────────────────────
-// Stores per-property detail data (fetched individually per DCID).
-// Populated by a future detail-fetcher; created here so the collection exists.
-db.createCollection('mls_details');
-db.mls_details.createIndex({ DCID: 1 }, { unique: true });
-db.mls_details.createIndex({ _updated_at: -1 });
-
 print('MLS collections and indexes created successfully.');

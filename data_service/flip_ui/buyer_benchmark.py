@@ -35,27 +35,6 @@ class ImagePaths(HTMLParser):
                 self.paths.add(url)
 
 
-def build_scale_catalog(path, assets, count=10_061):
-    """Extend the ordinary preview catalog with metadata-only homes for load testing."""
-    from buyer_fixtures import fixture_manifest
-    from buyer_publish import publish
-
-    manifest = fixture_manifest(assets)
-    if count < len(manifest['homes']):
-        raise ValueError('The catalog must retain the four buyer preview examples')
-    sample = manifest['homes'][1]
-    cities = ('Oakland', 'Richmond', 'San Rafael', 'Napa', 'San Francisco',
-              'San Mateo', 'San Jose', 'Fairfield', 'Santa Rosa')
-    for number in range(count - len(manifest['homes'])):
-        city = cities[number % len(cities)]
-        manifest['homes'].append({
-            **sample, 'id': f'capacity{number:012x}', 'city': city,
-            'address': f'Example inventory · {city}', 'coordinates': [],
-            'price': 500_000 + (number * 65537) % 960_000,
-        })
-    publish(manifest, path, assets)
-
-
 def fetch(base, path, *, discovery=False):
     started = monotonic()
     try:

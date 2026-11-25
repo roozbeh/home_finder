@@ -6,7 +6,7 @@ Use this file to resume work after a context reset. Check the working tree befor
 
 - [cluster_cleanup.md](cluster_cleanup.md) is the Atlas and SQLite cleanup plan. Read **Implementation progress** for completed stages, verification, and remaining decisions. Update that section when you verify or complete another migration step.
 - [ACTIVE_LISTINGS.md](data_service/photo_categorizer/ACTIVE_LISTINGS.md) has Moondream commands, checkpoints, and operational details.
-- [BUYER_PUBLISHER.md](data_service/flip_ui/BUYER_PUBLISHER.md) and [BUYER_ROLLOUT.md](data_service/flip_ui/BUYER_ROLLOUT.md) describe the legacy buyer publisher and MLS display policy. Read the cleanup plan for the newer Atlas preview.
+- [BUYER_PUBLISHER.md](data_service/flip_ui/BUYER_PUBLISHER.md) and [BUYER_ROLLOUT.md](data_service/flip_ui/BUYER_ROLLOUT.md) record the publisher retirement and the Atlas MLS display policy. Read the cleanup plan for the newer Atlas preview.
 - [RENOVATION_MODELS.md](data_service/photo_categorizer/RENOVATION_MODELS.md) covers the separate renovation model and cost work. [PLAN_FOR_FUTURE.md](PLAN_FOR_FUTURE.md) covers other repository work.
 
 ## Local services
@@ -14,7 +14,7 @@ Use this file to resume work after a context reset. Check the working tree befor
 | URL | Service | Property data |
 | --- | --- | --- |
 | [8092 public Atlas preview](http://127.0.0.1:8092/homes) | Compose project `homefinder-atlas-staging` | Direct reads from `mls.mls_listings` |
-| [8091 legacy public preview](http://127.0.0.1:8091/homes) | `flips_public` | Published SQLite catalog |
+| [8091 local public service](http://127.0.0.1:8091/homes) | `flips_public` | Direct reads from `mls.mls_listings` |
 | [8090 admin](http://127.0.0.1:8090/) | `flips_admin` | Atlas listings and private FlipDB data |
 
 These services were running when checked on November 24, 2026 UTC. Use `docker ps` or a local HTTP check for current status. The public Atlas preview is bound to loopback. Its dedicated Atlas account can read only `mls.mls_listings` on the `mlsdata` cluster. The ignored `data_service/buyer-atlas-staging.env` supplies `BUYER_ATLAS_URI` and `FLIP_UI_SECRET_KEY`. Use the existing publication directory for the MLS policy and opaque URL key. Keep credentials and key contents out of logs, commits, and handoff files.

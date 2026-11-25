@@ -8,8 +8,7 @@ services:
     ports:
       - "127.0.0.1:8092:5000"
     environment:
-      BUYER_MODE: approved
-      BUYER_ATLAS_STAGING: "true"
+      BUYER_NOINDEX: "true"
       BUYER_ATLAS_POLICY: /input/live-policy.json
       MONGO_URI: ""
     volumes:

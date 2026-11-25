@@ -59,7 +59,7 @@ if os.environ.get("BUYER_TRUST_PROXY") == "true":
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 app.secret_key = os.environ.get("FLIP_UI_SECRET_KEY", "") or os.environ.get("SECRET_KEY", "")
 if not app.secret_key:
-    if os.environ.get("BUYER_MODE") == "approved":
+    if os.environ.get("BUYER_ATLAS_URI") or os.environ.get("BUYER_ATLAS_POLICY"):
         raise RuntimeError("Set FLIP_UI_SECRET_KEY for approved buyer mode")
     app.secret_key = secrets.token_hex(32)
 app.config.update(
@@ -451,9 +451,7 @@ def login():
             session.clear()
             session["flip_ui_admin"] = True
             session["flip_ui_role"] = "admin"
-            fallback = "flip_list" if mongo is not None else (
-                "buyer.homes" if app.config["BUYER_ATLAS_STAGING"] else "buyer.leads"
-            )
+            fallback = "flip_list" if mongo is not None else "buyer.homes"
             return redirect(next_url or url_for(fallback))
         else:
             error = "Incorrect username or password."
@@ -671,16 +669,7 @@ def save_label(pair_key: str):
 
 
 from public_buyer import register_public
-register_public(app, admin_required, validate_csrf)
-
-if not app.config["BUYER_ATLAS_STAGING"]:
-    from buyer_analysis_review import register_analysis_review
-    from buyer_supply import register_supply
-    from buyer_worker import register_worker
-
-    register_analysis_review(app, admin_required, validate_csrf)
-    register_supply(app, admin_required, validate_csrf)
-    register_worker(app, admin_required, validate_csrf)
+register_public(app)
 
 from active import register_active
 register_active(app, _dbs, signed_in_required, listing_view, demo_viewer)

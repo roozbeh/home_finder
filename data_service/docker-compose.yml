@@ -96,20 +96,6 @@ services:
         max-size: "20m"
         max-file: "4"
 
-  cost-estimation-backfill:
-    build:
-      context: .
-      dockerfile: photo_categorizer/Dockerfile.cost-backfill
-    profiles: ["cost-backfill"]
-    env_file:
-      - env
-    command: ["--dry-run"]
-    read_only: true
-    tmpfs:
-      - /tmp
-    mem_limit: 768m
-    cpus: 2.0
-
   # ── Marketing content generator ───────────────────────────────────────────
   # Generates Reddit posts, Instagram captions, and blog post drafts using
   # live MLS data + Claude. Run on demand — does not stay up.
